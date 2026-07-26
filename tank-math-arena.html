@@ -565,7 +565,7 @@
 
   function getEngageRadius(){
     const radius = learnedProfile.preferredRange*0.9 + learnedProfile.aggression*90;
-    return clamp(radius, 160, 460);
+    return clamp(radius, 130, 260);
   }
 
   function getBotAimSpread(){
@@ -617,7 +617,10 @@
       reloadTimer: 0,
       lastShotTime: -999,
       nextFireCooldown: BOT_FIRE_COOLDOWN_MIN,
-      readyToFireAt: 0 // human-style reaction pause before engaging a new target
+      readyToFireAt: 0, // human-style reaction pause before engaging a new target
+      assaultingBase: false,
+      nextAssaultAt: performance.now()/1000 + 10 + Math.random()*8, // first push after a short warm-up
+      assaultEndAt: 0
     };
   }
 
@@ -644,7 +647,7 @@
     bot.scraps -= itemCost(item, botPurchaseCounts);
     botPurchaseCounts[item.id]++;
     item.apply(bot);
-    addFloater(bot.x, bot.y-40, "Upgraded!", "#9fd6ff");
+    addFloater(bot.x, bot.y-46, "Upgraded: "+item.name+"!", "#9fd6ff", {decay:0.5, size:15});
   }
 
   function findNearestBlock(x,y){
@@ -709,8 +712,9 @@
     for(let i=0;i<20;i++) spawnBlock(pickTier());
   }
 
-  function addFloater(x,y,text,color){
-    floaters.push({x,y,text,color,life:1.0});
+  function addFloater(x,y,text,color,opts){
+    opts = opts || {};
+    floaters.push({x,y,text,color,life:1.0,decay:opts.decay||1.1,size:opts.size||13});
   }
 
   // ============================================================
@@ -1074,10 +1078,10 @@
 
     // --- decide whether to hunt the player or keep farming blocks ---
     const wasEngaging = bot.engagingPlayer;
+    const dPlayer = (player && !player.dead) ? Math.hypot(player.x-bot.x, player.y-bot.y) : Infinity;
     if(player && !player.dead){
-      const dPlayer = Math.hypot(player.x-bot.x, player.y-bot.y);
       if(wasEngaging){
-        bot.engagingPlayer = dPlayer < getEngageRadius()*1.5; // hysteresis so it doesn't flicker off
+        bot.engagingPlayer = dPlayer < getEngageRadius()*1.3; // hysteresis so it doesn't flicker off
       } else {
         bot.engagingPlayer = dPlayer < getEngageRadius();
       }
@@ -1088,8 +1092,32 @@
       bot.readyToFireAt = now + 0.3 + Math.random()*0.3;
     }
 
+    // Blocks respawn continuously, so "nearest block" is almost always closer
+    // than the enemy base and would otherwise win every priority check forever.
+    // Force a periodic break from farming to actually push toward the base.
+    // This is scheduled independently of engagingPlayer — the straight-line path
+    // from the bot's corner to the base runs right past the player's own spawn,
+    // so if "player nearby" could cancel the push, camping near your own base
+    // would silently defeat it every single time. Instead the bot keeps
+    // advancing on the base once committed and only breaks stride to defend
+    // itself if the player gets right on top of it (handled below).
+    if(bot.assaultingBase && now>bot.assaultEndAt) bot.assaultingBase = false;
+    if(!bot.assaultingBase && now>=bot.nextAssaultAt){
+      bot.assaultingBase = true;
+      // Generous window: the base sits at the far corner, so the bot needs time to
+      // cross the whole field (and dodge blocks along the way) before it can even
+      // start firing — a short timer would keep expiring before it ever arrived.
+      bot.assaultEndAt = now + 22 + Math.random()*10;
+      bot.nextAssaultAt = bot.assaultEndAt + 8 + Math.random()*10;
+      addFloater(bot.x, bot.y-40, "Pushing base!", "#ffb37a");
+    }
+
     let tx, ty, hasTarget=false, firingRange=220, stopDist=130;
-    if(bot.engagingPlayer){
+    if(bot.assaultingBase && base){
+      tx = base.x; ty = base.y; hasTarget = true;
+      firingRange = 240; stopDist = 150;
+      bot.targetBlock = null;
+    } else if(bot.engagingPlayer){
       tx = player.x; ty = player.y; hasTarget = true;
       firingRange = 260; stopDist = 155;
       bot.targetBlock = null;
@@ -1130,9 +1158,20 @@
       bot.bodyAngle += diff*Math.min(1, dt*8);
     }
 
+    // What to actually shoot at can differ from where the hull is driving:
+    // while assaulting, always shoot the base once it's in range (that's the
+    // whole point of the push) and only divert a shot to the player if the
+    // base is still out of reach and the player is crowding right on top of
+    // the bot — otherwise a player camping their own base would make the
+    // bot fire at them forever and never once hit the base it's standing next to.
+    let fireTx = tx, fireTy = ty, fireDist = dist, fireRange = firingRange;
+    if(bot.assaultingBase && dist>=firingRange && dPlayer<150){
+      fireTx = player.x; fireTy = player.y; fireDist = dPlayer; fireRange = 150;
+    }
+
     if(hasTarget){
-      bot.angle = Math.atan2(ty-bot.y, tx-bot.x);
-      if(dist<firingRange){
+      bot.angle = Math.atan2(fireTy-bot.y, fireTx-bot.x);
+      if(fireDist<fireRange){
         if(bot.ammo<=0){
           bot.state = "reloading";
           bot.reloadTimer = getBotReloadDelay();
@@ -1273,7 +1312,7 @@
   function updateFloaters(dt){
     for(let i=floaters.length-1;i>=0;i--){
       const f = floaters[i];
-      f.y -= dt*22; f.life -= dt*1.1;
+      f.y -= dt*22; f.life -= dt*f.decay;
       if(f.life<=0) floaters.splice(i,1);
     }
   }
@@ -1476,7 +1515,7 @@
     floaters.forEach(f=>{
       ctx.globalAlpha = clamp(f.life,0,1);
       ctx.fillStyle = f.color;
-      ctx.font = "bold 13px "+getComputedStyle(document.body).fontFamily;
+      ctx.font = "bold "+f.size+"px "+getComputedStyle(document.body).fontFamily;
       ctx.fillText(f.text, f.x, f.y);
     });
     ctx.globalAlpha = 1;
