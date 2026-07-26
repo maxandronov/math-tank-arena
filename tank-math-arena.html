@@ -86,32 +86,6 @@
     pointer-events:none;
     z-index:5;
   }
-  #statsToggle{
-    position:absolute;bottom:10px;right:14px;
-    font-family:var(--font-mono);
-    font-size:11px;
-    background:var(--hud-panel);
-    border:1px solid var(--hud-line);
-    color:var(--cream-dim);
-    padding:6px 10px;border-radius:6px;
-    cursor:pointer;z-index:5;
-  }
-  #statsPanel{
-    position:absolute;bottom:44px;right:14px;
-    width:190px;
-    background:linear-gradient(180deg,var(--hud-panel),var(--hud-panel-2));
-    border:1px solid var(--hud-line);
-    border-radius:8px;padding:10px 12px;
-    font-family:var(--font-mono);
-    display:none;z-index:5;
-  }
-  #statsPanel.open{display:block;}
-  #statsPanel h4{margin:0 0 8px 0;font-size:11px;letter-spacing:1px;color:var(--cream-dim);text-transform:uppercase;font-weight:normal;}
-  .stat-row{margin-bottom:7px;}
-  .stat-row .lbl{display:flex;justify-content:space-between;font-size:10px;color:var(--cream-dim);margin-bottom:2px;}
-  .stat-row .bar-track{height:6px;}
-  .stat-fill{height:100%;background:linear-gradient(90deg,var(--sky),var(--amber));border-radius:5px;transition:width .3s ease;}
-
   /* ---------- Start screen ---------- */
   #startScreen{
     position:absolute;inset:0;
@@ -208,7 +182,7 @@
   }
   #qTimerTrack{height:4px;background:#0c1109;border-radius:3px;overflow:hidden;margin-bottom:16px;}
   #qTimerFill{height:100%;width:100%;background:var(--green-ok);}
-  #qTimerFill.running{animation:shrink 15s linear forwards;}
+  #qTimerFill.running{animation:shrink 10s linear forwards;}
   @keyframes shrink{
     0%{width:100%;background:var(--green-ok);}
     60%{background:var(--amber);}
@@ -225,6 +199,14 @@
     background:#0f150c;color:var(--cream);
   }
   #qInput:focus{outline:2px solid var(--amber);}
+  #qTimeoutReveal{
+    display:none;
+    margin:0 auto 14px auto;
+    width:130px;font-family:var(--font-mono);font-size:22px;text-align:center;
+    padding:8px;border-radius:6px;border:1px solid var(--coral);
+    background:#0f150c;color:var(--coral);
+  }
+  #qTimeoutReveal.show{display:block;}
   #qSubmit{
     display:block;margin:0 auto;
     font-family:var(--font-display);font-weight:bold;font-size:14px;
@@ -339,19 +321,6 @@
   </div>
 
   <div id="controlsLegend">WASD move &nbsp;·&nbsp; Mouse aim &nbsp;·&nbsp; Space shoot &nbsp;·&nbsp; R reload &nbsp;·&nbsp; Q shop</div>
-  <button id="statsToggle">📊 Learning Stats</button>
-  <div id="statsPanel">
-    <h4>Adaptive Level (1–10)</h4>
-    <div class="stat-row"><div class="lbl"><span>Addition</span><span id="lvlAddTxt">1.0</span></div><div class="bar-track"><div class="stat-fill" id="lvlAdd"></div></div></div>
-    <div class="stat-row"><div class="lbl"><span>Subtraction</span><span id="lvlSubTxt">1.0</span></div><div class="bar-track"><div class="stat-fill" id="lvlSub"></div></div></div>
-    <div class="stat-row"><div class="lbl"><span>Multiplication</span><span id="lvlMulTxt">1.0</span></div><div class="bar-track"><div class="stat-fill" id="lvlMul"></div></div></div>
-    <div class="stat-row"><div class="lbl"><span>Division</span><span id="lvlDivTxt">1.0</span></div><div class="bar-track"><div class="stat-fill" id="lvlDiv"></div></div></div>
-    <h4 style="margin-top:14px;">Bot Learned From You</h4>
-    <div class="stat-row"><div class="lbl"><span>Your Speed</span><span id="adaptSpeedTxt">–</span></div><div class="bar-track"><div class="stat-fill" id="adaptSpeed"></div></div></div>
-    <div class="stat-row"><div class="lbl"><span>Your Accuracy</span><span id="adaptAccTxt">–</span></div><div class="bar-track"><div class="stat-fill" id="adaptAcc"></div></div></div>
-    <div class="stat-row"><div class="lbl"><span>Your Aggression</span><span id="adaptAggTxt">–</span></div><div class="bar-track"><div class="stat-fill" id="adaptAgg"></div></div></div>
-    <div style="font-size:9px;color:var(--cream-dim);margin-top:2px;">Session #<span id="adaptSessions">1</span> · saved between games</div>
-  </div>
 
   <div id="placementHint">Click on the field to place your barrier · Esc to cancel</div>
 
@@ -378,6 +347,7 @@
       <div id="qTimerTrack"><div id="qTimerFill"></div></div>
       <div id="qText">? + ? = ?</div>
       <input id="qInput" type="number" inputmode="numeric" autocomplete="off">
+      <div id="qTimeoutReveal"></div>
       <button id="qSubmit">Answer</button>
       <div id="qFeedback"></div>
     </div>
@@ -438,15 +408,17 @@
   const MAX_BLOCKS = 30;
   const BLOCK_SPAWN_INTERVAL = 3.2; // seconds
 
+  const ARMOR_HP_CAP = 20+30;     // starting maxHp (20) + at most 6 Armor Plating buys (+5 each)
+  const CANNON_DAMAGE_CAP = 1+9;  // starting damage (1) + at most 9 Cannon Upgrade buys (+1 each)
   const SHOP_ITEMS = [
     {id:"ammo", name:"Extra Ammo Slot", desc:"+1 max ammo (cap 12)", baseCost:14, inc:9,
       apply:(p)=>{ if(p.maxAmmo<12){p.maxAmmo++; p.ammo=Math.min(p.maxAmmo,p.ammo+1);} }},
-    {id:"armor", name:"Armor Plating", desc:"+25 max armor, refills to new max", baseCost:18, inc:10,
-      apply:(p)=>{ p.maxHp+=25; p.hp=p.maxHp; }},
+    {id:"armor", name:"Armor Plating", desc:"+5 max armor (cap +30), refills to new max", baseCost:18, inc:10,
+      apply:(p)=>{ if(p.maxHp<ARMOR_HP_CAP){ p.maxHp=Math.min(ARMOR_HP_CAP,p.maxHp+5); } p.hp=p.maxHp; }},
     {id:"engine", name:"Engine Boost", desc:"+8% move speed (cap +40%)", baseCost:16, inc:8,
       apply:(p)=>{ if(p.speedBonus<0.40){p.speedBonus=Math.min(0.40,p.speedBonus+0.08);} }},
-    {id:"cannon", name:"Cannon Upgrade", desc:"+1 shot power", baseCost:22, inc:12,
-      apply:(p)=>{ p.damage+=1; }},
+    {id:"cannon", name:"Cannon Upgrade", desc:"+1 shot power (cap 10 total)", baseCost:22, inc:12,
+      apply:(p)=>{ if(p.damage<CANNON_DAMAGE_CAP){ p.damage=Math.min(CANNON_DAMAGE_CAP,p.damage+1); } }},
     {id:"wood_block", name:"Wood Barrier", desc:"Place a 1-hit barrier block", baseCost:4, inc:1,
       apply:(p)=>{ startPlacement("wood"); }},
     {id:"brick_block", name:"Brick Barrier", desc:"Place a 2-hit barrier block", baseCost:9, inc:2,
@@ -461,76 +433,35 @@
   const BOT_UPGRADE_ITEMS = SHOP_ITEMS.filter(i=>!i.id.includes("block"));
 
   // ============================================================
-  // ADAPTIVE MATH ENGINE
+  // MATH ENGINE (fixed difficulty \u2014 no adaptive leveling)
   // ============================================================
   const OPS = ["add","sub","mul","div"];
-  const mathState = {
-    add:{level:2.0}, sub:{level:2.0}, mul:{level:1.4}, div:{level:1.4}
-  };
+  const ADD_SUB_MAX = 20;        // addition/subtraction operands range 1\u201320
+  const MUL_DIV_MAX_FACTOR = 9;  // multiplication/division factors range 2\u20139
   function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
   function randInt(a,b){return Math.floor(Math.random()*(b-a+1))+a;}
 
-  function chooseOp(){
-    const weights = OPS.map(o=>Math.max(1, 11-mathState[o].level));
-    const total = weights.reduce((a,b)=>a+b,0);
-    let r = Math.random()*total;
-    for(let i=0;i<OPS.length;i++){
-      if(r<weights[i]) return OPS[i];
-      r-=weights[i];
-    }
-    return OPS[OPS.length-1];
-  }
-
   function genQuestion(){
-    const op = chooseOp();
-    const lvl = mathState[op].level;
-    const L = clamp(Math.round(lvl),1,10);
+    const op = OPS[Math.floor(Math.random()*OPS.length)];
     let a,b,answer,text;
     if(op==="add"){
-      const maxV = Math.min(999, Math.round(4*Math.pow(1.65, L-1)));
-      a = randInt(1,maxV); b = randInt(1,maxV);
+      a = randInt(1,ADD_SUB_MAX); b = randInt(1,ADD_SUB_MAX);
       if(Math.random()<0.3){ answer=b; text = a+" + ? = "+(a+b); }
       else { answer=a+b; text = a+" + "+b+" = ?"; }
     } else if(op==="sub"){
-      const maxV = Math.min(999, Math.round(4*Math.pow(1.65, L-1)));
-      a = randInt(1,maxV); b = randInt(1,maxV);
-      if(L<8 && b>a){ const t=a; a=b; b=t; }
+      a = randInt(1,ADD_SUB_MAX); b = randInt(1,ADD_SUB_MAX);
+      if(b>a){ const t=a; a=b; b=t; } // always keep a>=b so the result is never negative
       const diff = a-b;
       if(Math.random()<0.3){ answer=b; text = a+" - ? = "+diff; }
       else { answer=diff; text = a+" - "+b+" = ?"; }
     } else if(op==="mul"){
-      const maxF = clamp(Math.round(2+L*1.05),3,12);
-      a = randInt(2,maxF); b = randInt(2,maxF);
+      a = randInt(2,MUL_DIV_MAX_FACTOR); b = randInt(2,MUL_DIV_MAX_FACTOR);
       answer = a*b; text = a+" \u00D7 "+b+" = ?";
     } else {
-      const maxF = clamp(Math.round(2+L*1.05),3,12);
-      b = randInt(2,maxF); const q = randInt(2,maxF); a = b*q;
+      b = randInt(2,MUL_DIV_MAX_FACTOR); const q = randInt(2,MUL_DIV_MAX_FACTOR); a = b*q;
       answer = q; text = a+" \u00F7 "+b+" = ?";
     }
-    return {op, answer, text, level:L, start:performance.now()};
-  }
-
-  function recordAnswer(op, correct, elapsedMs){
-    const st = mathState[op];
-    let delta;
-    if(correct){
-      if(elapsedMs<4000) delta=1.2;
-      else if(elapsedMs<9000) delta=0.7;
-      else delta=0.35;
-    } else {
-      delta=-1.1;
-    }
-    st.level = clamp(st.level+delta,1,10);
-    updateStatsPanel();
-  }
-
-  function updateStatsPanel(){
-    const map = {add:["lvlAdd","lvlAddTxt"],sub:["lvlSub","lvlSubTxt"],mul:["lvlMul","lvlMulTxt"],div:["lvlDiv","lvlDivTxt"]};
-    OPS.forEach(op=>{
-      const lvl = mathState[op].level;
-      document.getElementById(map[op][0]).style.width = ((lvl-1)/9*100)+"%";
-      document.getElementById(map[op][1]).textContent = lvl.toFixed(1);
-    });
+    return {answer, text, start:performance.now()};
   }
 
   function updateAdaptPanel(){
@@ -652,7 +583,7 @@
       radius: 16,
       speed: 165,
       speedBonus: 0,
-      hp: 100, maxHp: 100,
+      hp: 20, maxHp: 20,
       ammo: 5, maxAmmo: 5,
       damage: 1,
       scraps: 0,
@@ -672,7 +603,7 @@
       radius: 16,
       speed: 108, // noticeably slower/more deliberate than the player
       speedBonus: 0,
-      hp: 100, maxHp: 100,
+      hp: 20, maxHp: 20,
       ammo: 5, maxAmmo: 5,
       damage: 1,
       scraps: 0,
@@ -922,27 +853,60 @@
   const qCard = document.getElementById("questionCard");
   const qText = document.getElementById("qText");
   const qInput = document.getElementById("qInput");
+  const qSubmit = document.getElementById("qSubmit");
+  const qTimeoutReveal = document.getElementById("qTimeoutReveal");
   const qFeedback = document.getElementById("qFeedback");
   const qPurposeLabel = document.getElementById("qPurposeLabel");
   const qTimerFill = document.getElementById("qTimerFill");
+  const QUESTION_TIME_LIMIT = 10000; // ms — must match #qTimerFill's "shrink" animation duration
+  const WRONG_ANSWER_PAUSE = 2000; // ms to let feedback sink in before showing the next question
+  let qTimeoutId = null;
+  let questionAttempt = 1; // 1 = first question shown this reload/purchase, 2 = after one miss, etc.
+  let qTimedOut = false; // true while the reveal is showing; blocks Enter/click from sneaking a late answer in
 
-  function openQuestion(purpose){
-    pendingPurpose = purpose;
-    currentQuestion = genQuestion();
-    qPurposeLabel.textContent = purpose==="reload" ? "Reload Console" : "Purchase Console";
+  // First-try answers pay out more the faster they land; a second-try answer
+  // pays a flat consolation scrap; anything beyond that pays nothing.
+  function computeReward(attempt, elapsedMs){
+    if(attempt===1){
+      if(elapsedMs<3000) return 4;
+      if(elapsedMs<6000) return 3;
+      return 2;
+    }
+    if(attempt===2) return 1;
+    return 0;
+  }
+
+  // Resets the card to show currentQuestion and (re)arms the auto-fail timer.
+  // Shared by the initial open, the wrong-answer reissue, and the timeout reissue.
+  function showQuestion(){
+    qTimedOut = false;
     qText.textContent = currentQuestion.text;
     qInput.value = "";
+    qInput.style.display = "";
+    qSubmit.style.display = "";
+    qTimeoutReveal.classList.remove("show");
     qFeedback.textContent = "";
     qFeedback.className = "";
     qTimerFill.classList.remove("running");
     void qTimerFill.offsetWidth;
     qTimerFill.classList.add("running");
+    setTimeout(()=>qInput.focus(),50);
+    if(qTimeoutId) clearTimeout(qTimeoutId);
+    qTimeoutId = setTimeout(handleQuestionTimeout, QUESTION_TIME_LIMIT);
+  }
+
+  function openQuestion(purpose){
+    pendingPurpose = purpose;
+    questionAttempt = 1;
+    currentQuestion = genQuestion();
+    qPurposeLabel.textContent = purpose==="reload" ? "Reload Console" : "Purchase Console";
+    showQuestion();
     qOverlay.classList.add("open");
     gamePaused = true;
-    setTimeout(()=>qInput.focus(),50);
   }
 
   function closeQuestion(){
+    if(qTimeoutId){ clearTimeout(qTimeoutId); qTimeoutId=null; }
     qOverlay.classList.remove("open");
     currentQuestion = null;
     pendingPurpose = null;
@@ -951,20 +915,50 @@
     }
   }
 
-  function submitQuestion(){
+  // The visual bar was purely cosmetic (CSS animation only) — nothing enforced
+  // it, so a stale question could still be answered correctly well past the limit,
+  // and even during the "Time's up" pause the input stayed live and submittable.
+  // Swapping the input for a plain answer readout removes both problems at once.
+  function handleQuestionTimeout(){
+    qTimeoutId = null;
     if(!currentQuestion) return;
+    qTimedOut = true;
+    playerElapsedHistory.push(QUESTION_TIME_LIMIT);
+    if(playerElapsedHistory.length>8) playerElapsedHistory.shift();
+    qFeedback.textContent = "Time's up!";
+    qFeedback.className = "wrong";
+    qCard.classList.remove("shake"); void qCard.offsetWidth; qCard.classList.add("shake");
+    qTimerFill.classList.remove("running");
+    qInput.style.display = "none";
+    qSubmit.style.display = "none";
+    qTimeoutReveal.textContent = "Answer: "+currentQuestion.answer;
+    qTimeoutReveal.classList.add("show");
+    setTimeout(()=>{
+      questionAttempt++;
+      currentQuestion = genQuestion();
+      showQuestion();
+    },WRONG_ANSWER_PAUSE);
+  }
+
+  function submitQuestion(){
+    if(!currentQuestion || qTimedOut) return;
+    if(qTimeoutId){ clearTimeout(qTimeoutId); qTimeoutId=null; }
     const val = parseInt(qInput.value,10);
     const elapsed = performance.now()-currentQuestion.start;
     const correct = (val===currentQuestion.answer);
-    recordAnswer(currentQuestion.op, correct, elapsed);
     playerElapsedHistory.push(elapsed);
     if(playerElapsedHistory.length>8) playerElapsedHistory.shift();
 
     if(correct){
-      qFeedback.textContent = "Correct!";
+      const reward = computeReward(questionAttempt, elapsed);
+      qFeedback.textContent = reward>0 ? ("Correct! +"+reward+" scrap"+(reward>1?"s":"")) : "Correct!";
       qFeedback.className = "correct";
       const purpose = pendingPurpose;
       setTimeout(()=>{
+        if(reward>0){
+          player.scraps += reward;
+          addFloater(player.x, player.y-56, "+"+reward+" scrap"+(reward>1?"s":""), "#f5b942");
+        }
         if(purpose==="reload"){
           player.ammo = player.maxAmmo;
           addFloater(player.x, player.y-28, "Reloaded!", "#f5b942");
@@ -979,6 +973,8 @@
           updateHud();
           closeQuestion();
           if(!placementMode){ renderShop(); }
+        } else {
+          updateHud();
         }
       },450);
     } else {
@@ -986,16 +982,10 @@
       qFeedback.className = "wrong";
       qCard.classList.remove("shake"); void qCard.offsetWidth; qCard.classList.add("shake");
       setTimeout(()=>{
+        questionAttempt++;
         currentQuestion = genQuestion();
-        qText.textContent = currentQuestion.text;
-        qInput.value = "";
-        qFeedback.textContent = "";
-        qFeedback.className = "";
-        qTimerFill.classList.remove("running");
-        void qTimerFill.offsetWidth;
-        qTimerFill.classList.add("running");
-        qInput.focus();
-      },1100);
+        showQuestion();
+      },WRONG_ANSWER_PAUSE);
     }
   }
   document.getElementById("qSubmit").addEventListener("click",submitQuestion);
@@ -1544,10 +1534,6 @@
     }
   }
 
-  document.getElementById("statsToggle").addEventListener("click",()=>{
-    document.getElementById("statsPanel").classList.toggle("open");
-  });
-
   // ============================================================
   // MAIN LOOP
   // ============================================================
@@ -1624,12 +1610,10 @@
     const botColor = TEAM_COLORS[(playerColorIdx+2)%4]; // contrasting color, opposite corner
     bot = makeBot(botColor.name+" Bot", botColor.hex);
     applyLearnedProfileToBot();
-    base = {x:CORNERS[PLAYER_CORNER].x, y:CORNERS[PLAYER_CORNER].y, hp:1000, maxHp:1000};
-    botBase = {x:CORNERS[BOT_CORNER].x, y:CORNERS[BOT_CORNER].y, hp:1000, maxHp:1000};
+    base = {x:CORNERS[PLAYER_CORNER].x, y:CORNERS[PLAYER_CORNER].y, hp:50, maxHp:50};
+    botBase = {x:CORNERS[BOT_CORNER].x, y:CORNERS[BOT_CORNER].y, hp:50, maxHp:50};
     initTerrain();
     initBlocks();
-    updateStatsPanel();
-    updateAdaptPanel();
     document.getElementById("startScreen").style.display = "none";
     resetKeys();
     gamePaused = false;
