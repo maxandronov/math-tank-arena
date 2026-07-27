@@ -1258,7 +1258,7 @@
         for(let j=blocks.length-1;j>=0;j--){
           const b = blocks[j];
           if(Math.abs(bl.x-b.x)<BLOCK_SIZE/2+3 && Math.abs(bl.y-b.y)<BLOCK_SIZE/2+3){
-            b.hp -= 1;
+            b.hp -= bl.damage;
             dead = true;
             if(bl.owner==="player") telemetry.shotsHit++;
             if(b.hp<=0){
