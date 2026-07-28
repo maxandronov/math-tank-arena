@@ -152,6 +152,33 @@
   }
   #playAgainBtn:active{transform:translateY(2px);box-shadow:0 2px 0 #8a6a1e;}
 
+  /* ---------- Pause overlay ---------- */
+  #pauseOverlay{
+    position:absolute;inset:0;
+    background:rgba(10,14,8,.82);
+    display:none;align-items:center;justify-content:center;
+    z-index:32;text-align:center;padding:20px;
+  }
+  #pauseOverlay.open{display:flex;}
+  #pauseCard{
+    background:linear-gradient(180deg,#1c2717,#141c10);
+    border:2px solid var(--amber);
+    border-radius:12px;padding:34px 40px;
+    box-shadow:0 20px 60px rgba(0,0,0,.6);
+  }
+  #pauseTitle{
+    font-size:30px;margin:0 0 8px 0;letter-spacing:3px;color:var(--amber);
+    text-shadow:0 3px 0 rgba(0,0,0,.4);
+  }
+  #pauseMsg{color:var(--cream-dim);margin:0 0 22px 0;font-size:12px;font-family:var(--font-mono);}
+  #resumeBtn{
+    font-family:var(--font-display);font-weight:bold;font-size:15px;
+    padding:11px 30px;border-radius:8px;border:none;cursor:pointer;
+    background:linear-gradient(180deg,var(--amber),var(--amber-dim));
+    color:#2b1f04;letter-spacing:1px;box-shadow:0 4px 0 #8a6a1e;
+  }
+  #resumeBtn:active{transform:translateY(2px);box-shadow:0 2px 0 #8a6a1e;}
+
   /* ---------- Question modal (signature element) ---------- */
   #questionOverlay{
     position:absolute;inset:0;
@@ -320,7 +347,7 @@
     </div>
   </div>
 
-  <div id="controlsLegend">WASD move &nbsp;·&nbsp; Mouse aim &nbsp;·&nbsp; Space shoot &nbsp;·&nbsp; R reload &nbsp;·&nbsp; Q shop</div>
+  <div id="controlsLegend">WASD move &nbsp;·&nbsp; Mouse aim &nbsp;·&nbsp; Space shoot &nbsp;·&nbsp; R reload &nbsp;·&nbsp; Q shop &nbsp;·&nbsp; Esc pause</div>
 
   <div id="placementHint">Click on the field to place your barrier · Esc to cancel</div>
 
@@ -374,6 +401,15 @@
       <h1 id="endTitle">VICTORY</h1>
       <p id="endMsg">You destroyed the enemy base!</p>
       <button id="playAgainBtn">Play Again</button>
+    </div>
+  </div>
+
+  <!-- Pause overlay -->
+  <div id="pauseOverlay">
+    <div id="pauseCard">
+      <h1 id="pauseTitle">PAUSED</h1>
+      <p id="pauseMsg">Press Esc or click Resume to keep going.</p>
+      <button id="resumeBtn">Resume</button>
     </div>
   </div>
 </div>
@@ -495,6 +531,7 @@
   let pendingPurpose = null; // "reload" | {type:"shop", item}
   let currentQuestion = null;
   let gamePaused = true;
+  let isPaused = false; // manual Esc pause, distinct from the shop/question/placement pauses
   let blockSpawnTimer = 0;
   let lastShotTime = -999;
   let playerElapsedHistory = []; // recent answer times (ms), used to pace the bot fairly
@@ -732,13 +769,16 @@
       if(e.key==="Enter") submitQuestion();
       return;
     }
+    if(e.key==="Escape"){
+      if(placementMode){ cancelPlacement(); return; }
+      if(document.getElementById("shopPanel").classList.contains("open")){ toggleShop(); return; }
+      togglePause();
+      return;
+    }
+    if(isPaused) return; // swallow every other input while manually paused
     if(e.key===" "){ e.preventDefault(); tryShoot(); }
     if(k==="r"){ tryReload(); }
     if(k==="q"){ if(player && !player.dead) toggleShop(); }
-    if(e.key==="Escape"){
-      if(placementMode) cancelPlacement();
-      if(document.getElementById("shopPanel").classList.contains("open")) toggleShop();
-    }
   });
   window.addEventListener("keyup",(e)=>{ keys[e.key.toLowerCase()]=false; });
   // Safety net: if the window/tab loses focus while a key is held, the browser
@@ -829,6 +869,20 @@
     }
   }
   document.getElementById("closeShop").addEventListener("click",()=>toggleShop(true));
+
+  // Manual pause is only offered when nothing else already owns the pause
+  // state (shop/placement/question/game-over) — those have their own Esc
+  // handling or shouldn't be pausable, so this only ever toggles cleanly
+  // between "playing" and "paused".
+  function togglePause(){
+    if(!player || gameOver) return;
+    if(document.getElementById("shopPanel").classList.contains("open")) return;
+    if(placementMode) return;
+    isPaused = !isPaused;
+    document.getElementById("pauseOverlay").classList.toggle("open", isPaused);
+    gamePaused = isPaused;
+  }
+  document.getElementById("resumeBtn").addEventListener("click", togglePause);
 
   function startPlacement(tier){
     placementMode = tier;
