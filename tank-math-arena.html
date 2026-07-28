@@ -125,6 +125,30 @@
   }
   #startBtn:active{transform:translateY(2px);box-shadow:0 2px 0 #8a6a1e;}
 
+  #startBody{
+    display:flex;flex-direction:row;align-items:flex-start;justify-content:center;
+    gap:28px;width:100%;max-width:820px;
+  }
+  #startForm{display:flex;flex-direction:column;align-items:center;padding-top:4px;flex-shrink:0;}
+  #rulesPanel{
+    text-align:left;background:rgba(0,0,0,.18);
+    border:1px solid var(--hud-line);border-radius:10px;
+    padding:12px 18px;width:400px;max-height:430px;overflow-y:auto;
+    font-size:11.5px;line-height:1.35;color:var(--cream-dim);
+  }
+  #rulesPanel h2{
+    color:var(--amber);font-size:13px;letter-spacing:1.5px;text-transform:uppercase;
+    margin:0 0 10px 0;
+  }
+  #rulesPanel h3{
+    color:var(--cream);font-size:11px;letter-spacing:1px;text-transform:uppercase;
+    margin:10px 0 3px 0;
+  }
+  #rulesPanel h3:first-of-type{margin-top:0;}
+  #rulesPanel ul{margin:0 0 2px 16px;padding:0;}
+  #rulesPanel li{margin-bottom:3px;}
+  #rulesPanel b{color:var(--cream);}
+
   /* ---------- End screen ---------- */
   #endScreen{
     position:absolute;inset:0;
@@ -384,15 +408,49 @@
   <div id="startScreen">
     <h1>TANK MATH ARENA</h1>
     <p class="tag">BREAK BLOCKS · EARN SCRAPS · OUTSMART THE RELOAD</p>
-    <div class="start-field">
-      <label>Callsign</label>
-      <input id="nameInput" type="text" maxlength="12" placeholder="">
+    <div id="startBody">
+      <div id="startForm">
+        <div class="start-field">
+          <label>Callsign</label>
+          <input id="nameInput" type="text" maxlength="12" placeholder="">
+        </div>
+        <div class="start-field">
+          <label>Tank Color</label>
+          <div id="colorSwatches"></div>
+        </div>
+        <button id="startBtn">Start Engine</button>
+      </div>
+      <div id="rulesPanel">
+        <h2>How to Play</h2>
+        <h3>Objective</h3>
+        <ul>
+          <li>Destroy the enemy base (top-right) before the bot destroys yours (bottom-left). Base HP shows in your HUD.</li>
+        </ul>
+        <h3>Controls</h3>
+        <ul>
+          <li><b>WASD</b> move · <b>Mouse</b> aim · <b>Space/Click</b> shoot</li>
+          <li><b>R</b> reload · <b>Q</b> shop · <b>Esc</b> pause</li>
+        </ul>
+        <h3>The Math Twist</h3>
+        <ul>
+          <li>Reloading and shop purchases both require answering a quick math question against a timer.</li>
+          <li>Fast, correct answers pay the most scraps; a second try pays less; a timeout costs you the reload/purchase and reveals the answer.</li>
+        </ul>
+        <h3>Blocks &amp; Scraps</h3>
+        <ul>
+          <li>Wood, brick, stone and metal blocks are scattered on the field — tougher tiers take more hits (or a stronger cannon) but pay out more scraps when destroyed.</li>
+        </ul>
+        <h3>Supply Depot</h3>
+        <ul>
+          <li>Spend scraps (Q) on more ammo, armor, speed, or cannon power — or place your own defensive barrier blocks.</li>
+        </ul>
+        <h3>The Enemy Bot</h3>
+        <ul>
+          <li>It farms blocks, fights back if you get close, and will periodically push to attack your base — don't leave it undefended!</li>
+          <li>Destroyed tanks respawn back at their base after a few seconds.</li>
+        </ul>
+      </div>
     </div>
-    <div class="start-field">
-      <label>Tank Color</label>
-      <div id="colorSwatches"></div>
-    </div>
-    <button id="startBtn">Start Engine</button>
   </div>
 
   <!-- End screen -->
