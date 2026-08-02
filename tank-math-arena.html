@@ -715,7 +715,8 @@
       readyToFireAt: 0, // human-style reaction pause before engaging a new target
       assaultingBase: false,
       nextAssaultAt: performance.now()/1000 + 10 + Math.random()*8, // first push after a short warm-up
-      assaultEndAt: 0
+      assaultEndAt: 0,
+      defendingBase: false
     };
   }
 
@@ -1204,6 +1205,22 @@
       bot.readyToFireAt = now + 0.3 + Math.random()*0.3;
     }
 
+    // The bot previously never reacted to the player attacking its OWN base
+    // unless it happened to already be standing nearby — it could be off
+    // farming or pushing the enemy base on the far side of the map while its
+    // own base took free, undefended damage. Track distance from the player
+    // to the bot's base specifically (not to the bot's current position) so
+    // it comes home and fights back regardless of what it was doing.
+    const wasDefending = bot.defendingBase;
+    const dPlayerToBotBase = (player && !player.dead && botBase) ? Math.hypot(player.x-botBase.x, player.y-botBase.y) : Infinity;
+    const BASE_DEFEND_RADIUS = 260;
+    bot.defendingBase = wasDefending ? dPlayerToBotBase < BASE_DEFEND_RADIUS*1.3 : dPlayerToBotBase < BASE_DEFEND_RADIUS;
+    if(bot.defendingBase && !wasDefending){
+      bot.readyToFireAt = now + 0.3 + Math.random()*0.3;
+      bot.assaultingBase = false; // home turf takes priority over a push in progress
+      addFloater(bot.x, bot.y-40, "Defending base!", "#ff8a75");
+    }
+
     // Blocks respawn continuously, so "nearest block" is almost always closer
     // than the enemy base and would otherwise win every priority check forever.
     // Force a periodic break from farming to actually push toward the base.
@@ -1214,7 +1231,7 @@
     // advancing on the base once committed and only breaks stride to defend
     // itself if the player gets right on top of it (handled below).
     if(bot.assaultingBase && now>bot.assaultEndAt) bot.assaultingBase = false;
-    if(!bot.assaultingBase && now>=bot.nextAssaultAt){
+    if(!bot.defendingBase && !bot.assaultingBase && now>=bot.nextAssaultAt){
       bot.assaultingBase = true;
       // Generous window: the base sits at the far corner, so the bot needs time to
       // cross the whole field (and dodge blocks along the way) before it can even
@@ -1225,7 +1242,11 @@
     }
 
     let tx, ty, hasTarget=false, firingRange=220, stopDist=130;
-    if(bot.assaultingBase && base){
+    if(bot.defendingBase){
+      tx = player.x; ty = player.y; hasTarget = true;
+      firingRange = 260; stopDist = 140;
+      bot.targetBlock = null;
+    } else if(bot.assaultingBase && base){
       tx = base.x; ty = base.y; hasTarget = true;
       firingRange = 240; stopDist = 150;
       bot.targetBlock = null;
