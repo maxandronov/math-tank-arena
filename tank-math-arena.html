@@ -46,7 +46,7 @@
     overflow:hidden;
     box-shadow:0 20px 60px rgba(0,0,0,0.5), 0 0 0 3px var(--hud-line);
   }
-  canvas{display:block;background:var(--field-a);}
+  canvas{display:block;background:var(--field-a);touch-action:none;}
 
   /* ---------- HUD ---------- */
   #hud{
@@ -115,6 +115,15 @@
   }
   .swatch:hover{transform:translateY(-2px);}
   .swatch.selected{border-color:var(--cream);}
+  #controlModeToggle{display:flex;gap:10px;justify-content:center;}
+  .mode-option{
+    font-family:var(--font-display);font-size:12px;font-weight:bold;
+    padding:9px 16px;border-radius:8px;cursor:pointer;
+    border:2px solid var(--hud-line);background:var(--hud-panel);color:var(--cream-dim);
+    transition:transform .15s ease;
+  }
+  .mode-option:hover{transform:translateY(-2px);}
+  .mode-option.selected{border-color:var(--amber);color:var(--cream);background:var(--hud-panel-2);}
   #startBtn{
     margin-top:26px;
     font-family:var(--font-display);font-weight:bold;font-size:16px;
@@ -342,6 +351,44 @@
     font-family:var(--font-mono);font-size:11px;color:var(--cream-dim);
     letter-spacing:1px;margin-top:6px;
   }
+
+  /* ---------- Touch controls ---------- */
+  #touchJoystick{
+    position:absolute;left:22px;bottom:22px;
+    width:112px;height:112px;border-radius:50%;
+    background:rgba(20,28,17,.55);border:2px solid var(--hud-line);
+    display:none;z-index:8;touch-action:none;
+  }
+  #app.touch-mode #touchJoystick{display:block;}
+  #touchJoystickKnob{
+    position:absolute;left:50%;top:50%;
+    width:50px;height:50px;margin:-25px 0 0 -25px;border-radius:50%;
+    background:linear-gradient(180deg,var(--amber),var(--amber-dim));
+    box-shadow:0 0 10px rgba(0,0,0,.4);
+    transition:transform .12s ease;
+  }
+  #touchJoystick.dragging #touchJoystickKnob{transition:none;}
+  #touchActionButtons{
+    position:absolute;right:16px;bottom:16px;
+    display:none;flex-direction:column;gap:10px;z-index:8;
+  }
+  #app.touch-mode #touchActionButtons{display:flex;}
+  .touch-btn{
+    font-family:var(--font-display);font-weight:bold;font-size:12px;letter-spacing:.5px;
+    width:76px;height:52px;border-radius:10px;border:1px solid var(--hud-line);
+    background:linear-gradient(180deg,var(--hud-panel),var(--hud-panel-2));
+    color:var(--cream);cursor:pointer;touch-action:none;
+  }
+  .touch-btn:active{transform:translateY(2px);}
+  #touchPauseBtn{
+    position:absolute;top:12px;right:14px;
+    display:none;width:36px;height:36px;border-radius:8px;
+    border:1px solid var(--hud-line);
+    background:linear-gradient(180deg,var(--hud-panel),var(--hud-panel-2));
+    color:var(--cream);font-size:14px;cursor:pointer;z-index:8;touch-action:none;
+  }
+  #app.touch-mode #touchPauseBtn{display:block;}
+  #app.touch-mode #controlsLegend{display:none;}
 </style>
 </head>
 <body>
@@ -373,7 +420,17 @@
 
   <div id="controlsLegend">WASD move &nbsp;·&nbsp; Mouse aim &nbsp;·&nbsp; Space shoot &nbsp;·&nbsp; R reload &nbsp;·&nbsp; Q shop &nbsp;·&nbsp; Esc pause</div>
 
-  <div id="placementHint">Click on the field to place your barrier · Esc to cancel</div>
+  <div id="placementHint">Tap or click on the field to place your barrier · Esc to cancel</div>
+
+  <!-- Touch controls -->
+  <div id="touchJoystick">
+    <div id="touchJoystickKnob"></div>
+  </div>
+  <div id="touchActionButtons">
+    <button type="button" class="touch-btn" id="touchReloadBtn">RELOAD</button>
+    <button type="button" class="touch-btn" id="touchShopBtn">SHOP</button>
+  </div>
+  <button type="button" id="touchPauseBtn">⏸</button>
 
   <div id="respawnOverlay">
     <div id="respawnBox">
@@ -419,6 +476,7 @@
         <ul>
           <li><b>WASD</b> move · <b>Mouse</b> aim · <b>Space/Click</b> shoot</li>
           <li><b>R</b> reload · <b>Q</b> shop · <b>Esc</b> pause</li>
+          <li>On a touch device, pick <b>Touch (Joystick)</b> below for an on-screen joystick, tap-to-shoot, and Reload/Shop/Pause buttons.</li>
         </ul>
         <h3>The Math Twist</h3>
         <ul>
@@ -447,6 +505,13 @@
         <div class="start-field">
           <label>Tank Color</label>
           <div id="colorSwatches"></div>
+        </div>
+        <div class="start-field">
+          <label>Controls</label>
+          <div id="controlModeToggle">
+            <button type="button" class="mode-option selected" data-mode="keyboard">Keyboard &amp; Mouse</button>
+            <button type="button" class="mode-option" data-mode="touch">Touch (Joystick)</button>
+          </div>
         </div>
         <button id="startBtn">Start Engine</button>
       </div>
@@ -598,6 +663,8 @@
   const BOT_FIRE_COOLDOWN_MAX = 1.7;
   const keys = {};
   const mouse = {x:WIDTH/2, y:HEIGHT/2};
+  const joystickVec = {x:0, y:0}; // analog movement from the touch joystick, magnitude 0..1
+  let joystickTouchId = null;
 
   // ============================================================
   // PLAYER TELEMETRY — captures how you actually play so the bot
@@ -856,6 +923,73 @@
     if(placementMode){ placeBlockAt(mouse.x, mouse.y); return; }
     tryShoot();
   });
+
+  // ============================================================
+  // TOUCH CONTROLS — on-screen joystick for movement, tap-to-aim-and-shoot
+  // for the field itself. Both a player standing at the keyboard and a
+  // player on a touchscreen can coexist: the joystick only overrides
+  // keyboard movement while it's actively being dragged (see updatePlayer).
+  // ============================================================
+  const touchJoystick = document.getElementById("touchJoystick");
+  const touchJoystickKnob = document.getElementById("touchJoystickKnob");
+  const JOYSTICK_MAX_RADIUS = 40;
+
+  function updateJoystickFromTouch(touch){
+    const rect = touchJoystick.getBoundingClientRect();
+    const cx = rect.left + rect.width/2, cy = rect.top + rect.height/2;
+    let dx = touch.clientX - cx, dy = touch.clientY - cy;
+    const dist = Math.hypot(dx, dy);
+    if(dist > JOYSTICK_MAX_RADIUS){ dx = dx/dist*JOYSTICK_MAX_RADIUS; dy = dy/dist*JOYSTICK_MAX_RADIUS; }
+    joystickVec.x = dx / JOYSTICK_MAX_RADIUS;
+    joystickVec.y = dy / JOYSTICK_MAX_RADIUS;
+    touchJoystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+  }
+  function resetJoystick(){
+    joystickTouchId = null;
+    joystickVec.x = 0; joystickVec.y = 0;
+    touchJoystick.classList.remove("dragging");
+    touchJoystickKnob.style.transform = "translate(0,0)";
+  }
+  touchJoystick.addEventListener("touchstart",(e)=>{
+    e.preventDefault();
+    if(joystickTouchId!==null) return; // already tracking a finger
+    const touch = e.changedTouches[0];
+    joystickTouchId = touch.identifier;
+    touchJoystick.classList.add("dragging");
+    updateJoystickFromTouch(touch);
+  },{passive:false});
+  window.addEventListener("touchmove",(e)=>{
+    if(joystickTouchId===null) return;
+    for(const touch of e.changedTouches){
+      if(touch.identifier===joystickTouchId){ e.preventDefault(); updateJoystickFromTouch(touch); break; }
+    }
+  },{passive:false});
+  function releaseJoystickTouch(e){
+    if(joystickTouchId===null) return;
+    for(const touch of e.changedTouches){
+      if(touch.identifier===joystickTouchId){ resetJoystick(); break; }
+    }
+  }
+  window.addEventListener("touchend", releaseJoystickTouch);
+  window.addEventListener("touchcancel", releaseJoystickTouch);
+
+  // Tapping the field aims the turret at that point and fires in the same
+  // motion — there's no "hover" on a touchscreen, so the aim angle has to be
+  // set here immediately rather than waiting for the next frame's mouse sync.
+  canvas.addEventListener("touchstart",(e)=>{
+    e.preventDefault();
+    const touch = e.changedTouches[0];
+    const rect = canvas.getBoundingClientRect();
+    mouse.x = (touch.clientX-rect.left) * (WIDTH/rect.width);
+    mouse.y = (touch.clientY-rect.top) * (HEIGHT/rect.height);
+    if(placementMode){ placeBlockAt(mouse.x, mouse.y); return; }
+    if(player) player.angle = Math.atan2(mouse.y-player.y, mouse.x-player.x);
+    tryShoot();
+  },{passive:false});
+
+  document.getElementById("touchReloadBtn").addEventListener("click", ()=> tryReload());
+  document.getElementById("touchShopBtn").addEventListener("click", ()=>{ if(player && !player.dead) toggleShop(); });
+  document.getElementById("touchPauseBtn").addEventListener("click", ()=> togglePause());
 
   // ============================================================
   // SHOOTING / RELOAD
@@ -1145,15 +1279,21 @@
 
   function updatePlayer(dt){
     if(player.dead) return;
-    let dx=0, dy=0;
-    if(keys["w"]) dy-=1;
-    if(keys["s"]) dy+=1;
-    if(keys["a"]) dx-=1;
-    if(keys["d"]) dx+=1;
+    let dx=0, dy=0, inputMag=1;
+    if(joystickVec.x!==0 || joystickVec.y!==0){
+      // Touch joystick: analog input, so a light push moves slower than a full push.
+      dx = joystickVec.x; dy = joystickVec.y;
+      inputMag = clamp(Math.hypot(dx,dy), 0, 1);
+    } else {
+      if(keys["w"]) dy-=1;
+      if(keys["s"]) dy+=1;
+      if(keys["a"]) dx-=1;
+      if(keys["d"]) dx+=1;
+    }
     if(dx!==0||dy!==0){
       const len = Math.hypot(dx,dy);
       dx/=len; dy/=len;
-      const spd = player.speed*(1+player.speedBonus);
+      const spd = player.speed*(1+player.speedBonus)*inputMag;
       let nx = player.x + dx*spd*dt;
       let ny = player.y + dy*spd*dt;
       nx = clamp(nx, player.radius, WIDTH-player.radius);
@@ -1765,6 +1905,16 @@
     swatchWrap.appendChild(sw);
   });
 
+  let controlMode = "keyboard"; // "keyboard" | "touch"
+  const modeWrap = document.getElementById("controlModeToggle");
+  [...modeWrap.children].forEach(btn=>{
+    btn.addEventListener("click",()=>{
+      controlMode = btn.dataset.mode;
+      [...modeWrap.children].forEach(el=>el.classList.remove("selected"));
+      btn.classList.add("selected");
+    });
+  });
+
   document.getElementById("playAgainBtn").addEventListener("click",()=>{
     location.reload();
   });
@@ -1787,6 +1937,7 @@
     initTerrain();
     initBlocks();
     document.getElementById("startScreen").style.display = "none";
+    document.getElementById("app").classList.toggle("touch-mode", controlMode==="touch");
     resetKeys();
     gamePaused = false;
     requestAnimationFrame(loop);
