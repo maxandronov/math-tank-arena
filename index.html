@@ -30,7 +30,7 @@
   }
   *{box-sizing:border-box;}
   html,body{
-    margin:0;padding:0;height:100%;
+    margin:0;padding:0;width:100%;height:100%;
     background:var(--bg-deep);
     font-family:var(--font-display);
     color:var(--cream);
@@ -566,13 +566,32 @@
   // all mouse/touch coordinate math) automatically reflects the transformed
   // size, so no input-handling code needs to know about the scale at all.
   const appEl = document.getElementById("app");
-  function fitAppToViewport(){
-    const scale = Math.min(window.innerWidth/WIDTH, window.innerHeight/HEIGHT) * 0.98;
-    appEl.style.transform = "scale("+scale+")";
+  // 0.9 leaves real breathing room on all sides — a plain window.innerWidth/
+  // innerHeight snapshot taken once on load can be stale or just wrong versus
+  // the space actually available (browser fullscreen transitions, "press Esc
+  // to exit fullscreen" banners, etc. don't reliably fire a timely resize
+  // event), and any leftover overflow gets silently clipped by body's
+  // overflow:hidden — so it's cheaper to undershoot slightly than to guess
+  // the exact edge and risk cropping the title or the start button.
+  const APP_FILL = 0.9;
+  function applyAppScale(vw, vh){
+    const scale = Math.min(vw/WIDTH, vh/HEIGHT) * APP_FILL;
+    appEl.style.transform = "scale("+Math.max(scale,0.1)+")";
   }
-  window.addEventListener("resize", fitAppToViewport);
-  window.addEventListener("fullscreenchange", fitAppToViewport);
-  fitAppToViewport();
+  if(window.ResizeObserver){
+    // Tracks the real rendered size of body continuously, however it changes —
+    // window resize, fullscreen enter/exit, mobile browser chrome showing or
+    // hiding — instead of relying on a specific event firing at the right time.
+    new ResizeObserver((entries)=>{
+      const r = entries[0].contentRect;
+      applyAppScale(r.width, r.height);
+    }).observe(document.body);
+  } else {
+    const recalcFit = ()=> applyAppScale(window.innerWidth, window.innerHeight);
+    window.addEventListener("resize", recalcFit);
+    window.addEventListener("fullscreenchange", recalcFit);
+    recalcFit();
+  }
 
   const TEAM_COLORS = [
     {name:"Red", hex:"#d9503f"},
