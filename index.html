@@ -36,12 +36,12 @@
     color:var(--cream);
     overflow:hidden;
     -webkit-user-select:none;user-select:none;
+    display:flex;align-items:center;justify-content:center;
   }
   #app{
     position:relative;
     width:960px;height:600px;
-    margin:20px auto;
-    max-width:100vw;
+    flex-shrink:0;
     border-radius:10px;
     overflow:hidden;
     box-shadow:0 20px 60px rgba(0,0,0,0.5), 0 0 0 3px var(--hud-line);
@@ -204,6 +204,7 @@
     text-shadow:0 3px 0 rgba(0,0,0,.4);
   }
   #pauseMsg{color:var(--cream-dim);margin:0 0 22px 0;font-size:12px;font-family:var(--font-mono);}
+  #pauseButtonRow{display:flex;gap:12px;justify-content:center;}
   #resumeBtn{
     font-family:var(--font-display);font-weight:bold;font-size:15px;
     padding:11px 30px;border-radius:8px;border:none;cursor:pointer;
@@ -211,6 +212,14 @@
     color:#2b1f04;letter-spacing:1px;box-shadow:0 4px 0 #8a6a1e;
   }
   #resumeBtn:active{transform:translateY(2px);box-shadow:0 2px 0 #8a6a1e;}
+  #restartBtn{
+    font-family:var(--font-display);font-weight:bold;font-size:15px;
+    padding:11px 26px;border-radius:8px;cursor:pointer;
+    background:transparent;border:2px solid var(--coral);color:var(--coral);
+    letter-spacing:1px;
+  }
+  #restartBtn:hover{background:rgba(226,84,63,0.12);}
+  #restartBtn:active{transform:translateY(2px);}
 
   /* ---------- Question modal (signature element) ---------- */
   #questionOverlay{
@@ -532,7 +541,10 @@
     <div id="pauseCard">
       <h1 id="pauseTitle">PAUSED</h1>
       <p id="pauseMsg">Press Esc or click Resume to keep going.</p>
-      <button id="resumeBtn">Resume</button>
+      <div id="pauseButtonRow">
+        <button id="resumeBtn">Resume</button>
+        <button id="restartBtn">Restart</button>
+      </div>
     </div>
   </div>
 </div>
@@ -545,6 +557,23 @@
   // CONFIG
   // ============================================================
   const WIDTH = 960, HEIGHT = 600;
+
+  // The whole game is laid out in fixed 960x600 pixels (canvas plus every
+  // absolutely-positioned HUD/overlay/touch element), so instead of a fixed
+  // on-page size we scale the entire #app box up or down to fill whatever
+  // viewport it's actually shown in — a CSS transform keeps every child's
+  // relative layout intact, and getBoundingClientRect() (already used for
+  // all mouse/touch coordinate math) automatically reflects the transformed
+  // size, so no input-handling code needs to know about the scale at all.
+  const appEl = document.getElementById("app");
+  function fitAppToViewport(){
+    const scale = Math.min(window.innerWidth/WIDTH, window.innerHeight/HEIGHT) * 0.98;
+    appEl.style.transform = "scale("+scale+")";
+  }
+  window.addEventListener("resize", fitAppToViewport);
+  window.addEventListener("fullscreenchange", fitAppToViewport);
+  fitAppToViewport();
+
   const TEAM_COLORS = [
     {name:"Red", hex:"#d9503f"},
     {name:"Blue", hex:"#3f7fd9"},
@@ -1076,6 +1105,7 @@
     gamePaused = isPaused;
   }
   document.getElementById("resumeBtn").addEventListener("click", togglePause);
+  document.getElementById("restartBtn").addEventListener("click", ()=> location.reload());
 
   function startPlacement(tier){
     placementMode = tier;
