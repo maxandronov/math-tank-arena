@@ -427,7 +427,7 @@
     </div>
   </div>
 
-  <div id="controlsLegend">WASD move &nbsp;·&nbsp; Mouse aim &nbsp;·&nbsp; Space shoot &nbsp;·&nbsp; R reload &nbsp;·&nbsp; Q shop &nbsp;·&nbsp; Esc pause</div>
+  <div id="controlsLegend">WASD/Arrows move &nbsp;·&nbsp; Mouse aim &nbsp;·&nbsp; Space shoot &nbsp;·&nbsp; R reload &nbsp;·&nbsp; Q shop &nbsp;·&nbsp; Esc pause</div>
 
   <div id="placementHint">Tap or click on the field to place your barrier · Esc to cancel</div>
 
@@ -483,7 +483,7 @@
         </ul>
         <h3>Controls</h3>
         <ul>
-          <li><b>WASD</b> move · <b>Mouse</b> aim · <b>Space/Click</b> shoot</li>
+          <li><b>WASD</b> or <b>Arrow keys</b> move · <b>Mouse</b> aim · <b>Space/Click</b> shoot</li>
           <li><b>R</b> reload · <b>Q</b> shop · <b>Esc</b> pause</li>
           <li>On a touch device, pick <b>Touch (Joystick)</b> below for an on-screen joystick, tap-to-shoot, and Reload/Shop/Pause buttons.</li>
         </ul>
@@ -940,6 +940,7 @@
   window.addEventListener("keydown",(e)=>{
     const k = e.key.toLowerCase();
     keys[k]=true; // always track real key state, even while a modal is open
+    if(k.startsWith("arrow")) e.preventDefault(); // don't let the page scroll under the game
     const overlayOpen = document.getElementById("questionOverlay").classList.contains("open");
     if(overlayOpen){
       if(e.key==="Enter") submitQuestion();
@@ -1336,10 +1337,10 @@
       dx = joystickVec.x; dy = joystickVec.y;
       inputMag = clamp(Math.hypot(dx,dy), 0, 1);
     } else {
-      if(keys["w"]) dy-=1;
-      if(keys["s"]) dy+=1;
-      if(keys["a"]) dx-=1;
-      if(keys["d"]) dx+=1;
+      if(keys["w"] || keys["arrowup"]) dy-=1;
+      if(keys["s"] || keys["arrowdown"]) dy+=1;
+      if(keys["a"] || keys["arrowleft"]) dx-=1;
+      if(keys["d"] || keys["arrowright"]) dx+=1;
     }
     if(dx!==0||dy!==0){
       const len = Math.hypot(dx,dy);
