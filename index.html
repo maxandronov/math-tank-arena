@@ -622,6 +622,8 @@
       apply:(p)=>{ if(p.maxAmmo<12){p.maxAmmo++; p.ammo=Math.min(p.maxAmmo,p.ammo+1);} }},
     {id:"armor", name:"Armor Plating", desc:"+5 max armor (cap +30), refills to new max", baseCost:18, inc:10,
       apply:(p)=>{ if(p.maxHp<ARMOR_HP_CAP){ p.maxHp=Math.min(ARMOR_HP_CAP,p.maxHp+5); } p.hp=p.maxHp; }},
+    {id:"repair", name:"Repair Kit", desc:"Heal 10 armor now (doesn't raise your max)", baseCost:12, inc:0,
+      apply:(p)=>{ p.hp=Math.min(p.maxHp,p.hp+10); }},
     {id:"engine", name:"Engine Boost", desc:"+8% move speed (cap +40%)", baseCost:16, inc:8,
       apply:(p)=>{ if(p.speedBonus<0.40){p.speedBonus=Math.min(0.40,p.speedBonus+0.08);} }},
     {id:"cannon", name:"Cannon Upgrade", desc:"+1 shot power (cap 10 total)", baseCost:22, inc:12,
