@@ -700,10 +700,16 @@
       else { answer=diff; text = a+" - "+b+" = ?"; }
     } else if(op==="mul"){
       a = randInt(2,level.mulDivMax); b = randInt(2,level.mulDivMax);
-      answer = a*b; text = a+" \u00D7 "+b+" = ?";
+      const product = a*b;
+      // Solving for a missing factor takes an extra inverse-operation step
+      // over just multiplying, so save it for once the numbers themselves
+      // aren't the only thing that's gotten harder.
+      if(mathLevel>=2 && Math.random()<0.3){ answer=b; text = a+" \u00D7 ? = "+product; }
+      else { answer=product; text = a+" \u00D7 "+b+" = ?"; }
     } else {
       b = randInt(2,level.mulDivMax); const q = randInt(2,level.mulDivMax); a = b*q;
-      answer = q; text = a+" \u00F7 "+b+" = ?";
+      if(mathLevel>=2 && Math.random()<0.3){ answer=b; text = a+" \u00F7 ? = "+q; }
+      else { answer=q; text = a+" \u00F7 "+b+" = ?"; }
     }
     return {answer, text, start:performance.now()};
   }
