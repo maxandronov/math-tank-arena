@@ -642,32 +642,67 @@
   const BOT_UPGRADE_ITEMS = SHOP_ITEMS.filter(i=>!i.id.includes("block"));
 
   // ============================================================
-  // MATH ENGINE (fixed difficulty \u2014 no adaptive leveling)
+  // MATH ENGINE \u2014 mild adaptive difficulty. Three fast, first-try-correct
+  // answers in a row nudge the operand ranges up a notch; any wrong answer
+  // or timeout nudges them back down one notch. Deliberately gentle (small
+  // per-level steps, one notch at a time) rather than a steep ramp, and it
+  // only ever changes the numbers involved \u2014 the timer and reward tiers
+  // stay exactly the same at every level.
   // ============================================================
   const OPS = ["add","sub","mul","div"];
-  const ADD_SUB_MAX = 20;        // addition/subtraction operands range 1\u201320
-  const MUL_DIV_MAX_FACTOR = 9;  // multiplication/division factors range 2\u20139
+  const MATH_LEVELS = [
+    {addSubMax:20, mulDivMax:9},
+    {addSubMax:26, mulDivMax:10},
+    {addSubMax:34, mulDivMax:11},
+    {addSubMax:44, mulDivMax:12},
+    {addSubMax:56, mulDivMax:13}
+  ];
+  let mathLevel = 0;
+  let fastStreak = 0;
+  const FAST_ANSWER_MS = 3500;
+  const STREAK_TO_LEVEL_UP = 3;
   function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
   function randInt(a,b){return Math.floor(Math.random()*(b-a+1))+a;}
 
+  // Called once per resolved question (correct, wrong, or timed out) to
+  // adjust mathLevel. Only a fast first-try answer builds the streak that
+  // levels difficulty up; anything else breaks the streak, and an outright
+  // miss also steps difficulty back down so a rough patch eases off.
+  function recordQuestionOutcome(correct, attempt, elapsedMs){
+    if(correct && attempt===1 && elapsedMs<FAST_ANSWER_MS){
+      fastStreak++;
+      if(fastStreak>=STREAK_TO_LEVEL_UP && mathLevel<MATH_LEVELS.length-1){
+        mathLevel++;
+        fastStreak = 0;
+        if(player) addFloater(player.x, player.y-64, "Sharper math ahead!", "#9fd6ff");
+      }
+    } else if(!correct){
+      fastStreak = 0;
+      if(mathLevel>0) mathLevel--;
+    } else {
+      fastStreak = 0; // correct, but not fast/first-try \u2014 streak breaks, level holds
+    }
+  }
+
   function genQuestion(){
+    const level = MATH_LEVELS[mathLevel];
     const op = OPS[Math.floor(Math.random()*OPS.length)];
     let a,b,answer,text;
     if(op==="add"){
-      a = randInt(1,ADD_SUB_MAX); b = randInt(1,ADD_SUB_MAX);
+      a = randInt(1,level.addSubMax); b = randInt(1,level.addSubMax);
       if(Math.random()<0.3){ answer=b; text = a+" + ? = "+(a+b); }
       else { answer=a+b; text = a+" + "+b+" = ?"; }
     } else if(op==="sub"){
-      a = randInt(1,ADD_SUB_MAX); b = randInt(1,ADD_SUB_MAX);
+      a = randInt(1,level.addSubMax); b = randInt(1,level.addSubMax);
       if(b>a){ const t=a; a=b; b=t; } // always keep a>=b so the result is never negative
       const diff = a-b;
       if(Math.random()<0.3){ answer=b; text = a+" - ? = "+diff; }
       else { answer=diff; text = a+" - "+b+" = ?"; }
     } else if(op==="mul"){
-      a = randInt(2,MUL_DIV_MAX_FACTOR); b = randInt(2,MUL_DIV_MAX_FACTOR);
+      a = randInt(2,level.mulDivMax); b = randInt(2,level.mulDivMax);
       answer = a*b; text = a+" \u00D7 "+b+" = ?";
     } else {
-      b = randInt(2,MUL_DIV_MAX_FACTOR); const q = randInt(2,MUL_DIV_MAX_FACTOR); a = b*q;
+      b = randInt(2,level.mulDivMax); const q = randInt(2,level.mulDivMax); a = b*q;
       answer = q; text = a+" \u00F7 "+b+" = ?";
     }
     return {answer, text, start:performance.now()};
@@ -1228,6 +1263,7 @@
     qTimedOut = true;
     playerElapsedHistory.push(QUESTION_TIME_LIMIT);
     if(playerElapsedHistory.length>8) playerElapsedHistory.shift();
+    recordQuestionOutcome(false, questionAttempt, QUESTION_TIME_LIMIT);
     qFeedback.textContent = "Time's up!";
     qFeedback.className = "wrong";
     qCard.classList.remove("shake"); void qCard.offsetWidth; qCard.classList.add("shake");
@@ -1251,6 +1287,7 @@
     const correct = (val===currentQuestion.answer);
     playerElapsedHistory.push(elapsed);
     if(playerElapsedHistory.length>8) playerElapsedHistory.shift();
+    recordQuestionOutcome(correct, questionAttempt, elapsed);
 
     if(correct){
       const reward = computeReward(questionAttempt, elapsed);
