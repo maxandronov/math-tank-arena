@@ -333,6 +333,18 @@
     display:none;z-index:6;
   }
   #placementHint.show{display:block;}
+  #baseAttackWarning{
+    position:absolute;top:12px;left:50%;transform:translateX(-50%);
+    background:rgba(50,16,14,.92);border:1px solid var(--coral);color:var(--cream);
+    padding:7px 18px;border-radius:6px;font-size:12px;font-weight:bold;letter-spacing:.5px;
+    display:none;z-index:7;pointer-events:none;
+    animation:baseWarnPulse 0.8s ease-in-out infinite;
+  }
+  #baseAttackWarning.show{display:block;}
+  @keyframes baseWarnPulse{
+    0%,100%{box-shadow:0 0 0 rgba(226,84,63,.6);}
+    50%{box-shadow:0 0 14px rgba(226,84,63,.9);}
+  }
   #respawnOverlay{
     position:absolute;inset:0;
     display:none;align-items:center;justify-content:center;
@@ -430,6 +442,8 @@
   <div id="controlsLegend">WASD/Arrows move &nbsp;·&nbsp; Mouse aim &nbsp;·&nbsp; Space shoot &nbsp;·&nbsp; R reload &nbsp;·&nbsp; Q shop &nbsp;·&nbsp; Esc pause</div>
 
   <div id="placementHint">Tap or click on the field to place your barrier · Esc to cancel</div>
+
+  <div id="baseAttackWarning">⚠ Your base is under attack!</div>
 
   <!-- Touch controls -->
   <div id="touchJoystick">
@@ -895,7 +909,11 @@
     botShopTimer += dt;
     if(botShopTimer < 2.6) return;
     botShopTimer = 0;
-    const affordable = BOT_UPGRADE_ITEMS.filter(i=>itemCost(i, botPurchaseCounts)<=bot.scraps);
+    const affordable = BOT_UPGRADE_ITEMS.filter(i=>{
+      if(itemCost(i, botPurchaseCounts)>bot.scraps) return false;
+      if(i.id==="repair" && bot.hp>=bot.maxHp) return false; // a heal at full health is a wasted purchase
+      return true;
+    });
     if(!affordable.length) return;
     const item = affordable[Math.floor(Math.random()*affordable.length)];
     bot.scraps -= itemCost(item, botPurchaseCounts);
@@ -969,6 +987,20 @@
   function addFloater(x,y,text,color,opts){
     opts = opts || {};
     floaters.push({x,y,text,color,life:1.0,decay:opts.decay||1.1,size:opts.size||13});
+  }
+
+  // A small top-of-screen banner, not a pausing overlay — just enough to
+  // notice your base is under fire without interrupting play. Repeated hits
+  // just push the hide-timer back out rather than stacking or flickering.
+  let baseWarningTimeout = null;
+  function showBaseAttackWarning(){
+    const el = document.getElementById("baseAttackWarning");
+    el.classList.add("show");
+    if(baseWarningTimeout) clearTimeout(baseWarningTimeout);
+    baseWarningTimeout = setTimeout(()=>{
+      el.classList.remove("show");
+      baseWarningTimeout = null;
+    }, 3000);
   }
 
   // ============================================================
@@ -1681,6 +1713,7 @@
             enemyBase.hp = Math.max(0, enemyBase.hp-bl.damage);
             addFloater(enemyBase.x, enemyBase.y-46, "-"+bl.damage, "#ffcf75");
             updateHud();
+            if(bl.owner==="bot") showBaseAttackWarning();
             if(enemyBase.hp<=0) endGame(bl.owner==="player" ? "win" : "lose");
           }
         }
