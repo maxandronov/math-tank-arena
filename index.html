@@ -1234,6 +1234,13 @@
     qTimerFill.classList.remove("running");
     void qTimerFill.offsetWidth;
     qTimerFill.classList.add("running");
+    // Focus synchronously, in the same call stack as whatever user gesture
+    // triggered this (a keypress, a click, a tap) — many mobile/touch
+    // browsers only pop the on-screen keyboard for a focus() call that's a
+    // direct continuation of a trusted user gesture, and silently ignore
+    // one that arrives via a setTimeout callback. The extra delayed call
+    // is just a fallback for the rare case the overlay wasn't laid out yet.
+    qInput.focus();
     setTimeout(()=>qInput.focus(),50);
     if(qTimeoutId) clearTimeout(qTimeoutId);
     qTimeoutId = setTimeout(handleQuestionTimeout, QUESTION_TIME_LIMIT);
@@ -1244,9 +1251,9 @@
     questionAttempt = 1;
     currentQuestion = genQuestion();
     qPurposeLabel.textContent = purpose==="reload" ? "Reload Console" : "Purchase Console";
-    showQuestion();
     qOverlay.classList.add("open");
     gamePaused = true;
+    showQuestion(); // after the overlay is visible, so the synchronous focus() above actually lands
   }
 
   function closeQuestion(){
