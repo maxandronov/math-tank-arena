@@ -1206,7 +1206,7 @@
   const WRONG_ANSWER_PAUSE = 2000; // ms to let feedback sink in before showing the next question
   let qTimeoutId = null;
   let questionAttempt = 1; // 1 = first question shown this reload/purchase, 2 = after one miss, etc.
-  let qTimedOut = false; // true while the reveal is showing; blocks Enter/click from sneaking a late answer in
+  let qLocked = false; // true while the reveal is showing (after either a timeout or a wrong answer); blocks Enter/click from sneaking a late or repeat answer in
 
   // First-try answers pay out more the faster they land; a second-try answer
   // pays a flat consolation scrap; anything beyond that pays nothing.
@@ -1223,7 +1223,7 @@
   // Resets the card to show currentQuestion and (re)arms the auto-fail timer.
   // Shared by the initial open, the wrong-answer reissue, and the timeout reissue.
   function showQuestion(){
-    qTimedOut = false;
+    qLocked = false;
     qText.textContent = currentQuestion.text;
     qInput.value = "";
     qInput.style.display = "";
@@ -1266,7 +1266,7 @@
   function handleQuestionTimeout(){
     qTimeoutId = null;
     if(!currentQuestion) return;
-    qTimedOut = true;
+    qLocked = true;
     playerElapsedHistory.push(QUESTION_TIME_LIMIT);
     if(playerElapsedHistory.length>8) playerElapsedHistory.shift();
     recordQuestionOutcome(false, questionAttempt, QUESTION_TIME_LIMIT);
@@ -1286,7 +1286,7 @@
   }
 
   function submitQuestion(){
-    if(!currentQuestion || qTimedOut) return;
+    if(!currentQuestion || qLocked) return;
     if(qTimeoutId){ clearTimeout(qTimeoutId); qTimeoutId=null; }
     const val = parseInt(qInput.value,10);
     const elapsed = performance.now()-currentQuestion.start;
@@ -1324,9 +1324,15 @@
         }
       },450);
     } else {
-      qFeedback.textContent = "Not quite — answer was "+currentQuestion.answer;
+      qLocked = true;
+      qFeedback.textContent = "Not quite!";
       qFeedback.className = "wrong";
       qCard.classList.remove("shake"); void qCard.offsetWidth; qCard.classList.add("shake");
+      qTimerFill.classList.remove("running");
+      qInput.style.display = "none";
+      qSubmit.style.display = "none";
+      qTimeoutReveal.textContent = "Answer: "+currentQuestion.answer;
+      qTimeoutReveal.classList.add("show");
       setTimeout(()=>{
         questionAttempt++;
         currentQuestion = genQuestion();
