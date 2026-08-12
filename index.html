@@ -1035,7 +1035,32 @@
   // can miss the keyup entirely, leaving movement "stuck". Clear everything
   // whenever that happens so a key never gets permanently jammed on.
   window.addEventListener("blur", resetKeys);
-  document.addEventListener("visibilitychange", ()=>{ if(document.hidden) resetKeys(); });
+  // Backgrounding the tab (alt-tab, switching windows, minimizing) throttles
+  // requestAnimationFrame to a crawl in every browser, which otherwise made
+  // the game look "frozen" or erratic the moment you switched back — bot
+  // movement stuttering through minutes of missed frames, or a 10s question
+  // timer having silently expired the whole time you couldn't see it. Pause
+  // cleanly on hide (same pause screen as pressing Esc) instead, and give a
+  // still-open question a fresh countdown when you return rather than let it
+  // have burned down invisibly. Deliberately doesn't auto-resume on return —
+  // jumping straight back into live combat the instant focus comes back
+  // would be its own jarring surprise.
+  document.addEventListener("visibilitychange", ()=>{
+    if(document.hidden){
+      resetKeys();
+      if(qTimeoutId){ clearTimeout(qTimeoutId); qTimeoutId=null; qTimerFill.classList.remove("running"); }
+      const questionOpen = document.getElementById("questionOverlay").classList.contains("open");
+      const shopOpen = document.getElementById("shopPanel").classList.contains("open");
+      if(player && !gameOver && !isPaused && !questionOpen && !shopOpen && !placementMode){
+        togglePause();
+      }
+    } else if(document.getElementById("questionOverlay").classList.contains("open") && currentQuestion && !qLocked){
+      qTimerFill.classList.remove("running");
+      void qTimerFill.offsetWidth;
+      qTimerFill.classList.add("running");
+      qTimeoutId = setTimeout(handleQuestionTimeout, QUESTION_TIME_LIMIT);
+    }
+  });
 
   const canvas = document.getElementById("game");
   canvas.addEventListener("mousemove",(e)=>{
