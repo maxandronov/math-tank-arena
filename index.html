@@ -116,6 +116,8 @@
   .swatch:hover{transform:translateY(-2px);}
   .swatch.selected{border-color:var(--cream);}
   #controlModeToggle{display:flex;gap:10px;justify-content:center;}
+  #difficultyToggle{display:flex;gap:8px;justify-content:center;}
+  #difficultyToggle .mode-option{padding:9px 14px;}
   .mode-option{
     font-family:var(--font-display);font-size:12px;font-weight:bold;
     padding:9px 16px;border-radius:8px;cursor:pointer;
@@ -536,6 +538,14 @@
             <button type="button" class="mode-option" data-mode="touch">Touch (Joystick)</button>
           </div>
         </div>
+        <div class="start-field">
+          <label>Difficulty</label>
+          <div id="difficultyToggle">
+            <button type="button" class="mode-option" data-difficulty="easy">Easy</button>
+            <button type="button" class="mode-option selected" data-difficulty="medium">Medium</button>
+            <button type="button" class="mode-option" data-difficulty="hard">Hard</button>
+          </div>
+        </div>
         <button id="startBtn">Start Engine</button>
       </div>
     </div>
@@ -618,6 +628,51 @@
   ];
   const PLAYER_CORNER = 2; // bottom-left
   const BOT_CORNER = 1;    // top-right — diagonally opposite the player
+
+  // ============================================================
+  // DIFFICULTY — chosen on the start screen, default "medium". Timer (10s),
+  // base HP, and block HP never change between difficulties; everything
+  // else that varies is collected here rather than scattered as inline
+  // conditionals throughout the bot/economy/question code.
+  // ============================================================
+  let difficulty = "medium"; // "easy" | "medium" | "hard"
+  const DIFFICULTY_CONFIG = {
+    easy: {
+      maxAttempts: 3,        // give up and grant the reload/purchase for free after this many misses
+      questionFreeze: true,  // game pauses while a question is open
+      mathStartLevel: 0,
+      scrapMult: 1.25,       // +25% on every scrap award, rounded up
+      botFireCooldownMult: 1.2,   // bot fires less often
+      botAimSpreadMult: 1.25,     // bot aims less accurately
+      botEngageRadiusMult: 0.85,  // bot notices/defends from a shorter range
+      botAssaultGapMult: 1.25     // longer gaps between base pushes
+    },
+    medium: {
+      maxAttempts: Infinity, // must eventually solve — no free pass
+      questionFreeze: true,
+      mathStartLevel: 0,
+      scrapMult: 1,
+      botFireCooldownMult: 1,
+      botAimSpreadMult: 1,
+      botEngageRadiusMult: 1,
+      botAssaultGapMult: 1
+    },
+    hard: {
+      maxAttempts: Infinity,
+      questionFreeze: false, // game keeps running live while a question is open
+      mathStartLevel: 1,     // starts a notch higher; still adapts up/down from there
+      scrapMult: 0.75,       // -25% on every scrap award, rounded up
+      botFireCooldownMult: 0.82,
+      botAimSpreadMult: 0.8,
+      botEngageRadiusMult: 1.15,
+      botAssaultGapMult: 0.8
+    }
+  };
+  function diffCfg(){ return DIFFICULTY_CONFIG[difficulty]; }
+  // Every player-earned scrap amount passes through here so the +-25%
+  // payout modifier is applied uniformly regardless of source (blocks,
+  // kills, question rewards) instead of being baked into each site.
+  function scaledScrap(n){ return Math.ceil(n * diffCfg().scrapMult); }
 
   const BLOCK_TIERS = {
     wood:  {hp:1, color:"#c9975a", dark:"#8f6338", scrap:[1,2],  weight:50, label:"Wood"},
@@ -832,12 +887,12 @@
 
   function getEngageRadius(){
     const radius = learnedProfile.preferredRange*0.9 + learnedProfile.aggression*90;
-    return clamp(radius, 130, 260);
+    return clamp(radius, 130, 260) * diffCfg().botEngageRadiusMult;
   }
 
   function getBotAimSpread(){
     // The more accurate you are, the tighter the bot's own aim gets.
-    return clamp(0.20 - learnedProfile.accuracy*0.12, 0.06, 0.20);
+    return clamp(0.20 - learnedProfile.accuracy*0.12, 0.06, 0.20) * diffCfg().botAimSpreadMult;
   }
 
   function makePlayer(name, color){
@@ -856,8 +911,37 @@
       scraps: 0,
       invulnUntil: 0,
       dead: false,
-      respawnAt: 0
+      respawnAt: 0,
+      tempBuff: null // {stat, amount, expiresAt} — Easy mode's first-try reward
     };
+  }
+
+  // Easy mode's first-try-correct reward: a random 10s stat buff instead of
+  // scraps. Only ever one active at a time — granting a new one first
+  // reverts whichever was still running rather than stacking.
+  const TEMP_BUFFS = [
+    {stat:"maxAmmo", amount:2, label:"+2 Ammo"},
+    {stat:"speedBonus", amount:0.15, label:"+15% Speed"},
+    {stat:"damage", amount:1, label:"+1 Damage"}
+  ];
+  function grantRandomTempBuff(){
+    if(!player) return;
+    if(player.tempBuff) revertTempBuff();
+    const b = TEMP_BUFFS[Math.floor(Math.random()*TEMP_BUFFS.length)];
+    player[b.stat] += b.amount;
+    if(b.stat==="maxAmmo") player.ammo = Math.min(player.maxAmmo, player.ammo+b.amount);
+    player.tempBuff = {stat:b.stat, amount:b.amount, expiresAt: performance.now()/1000+10};
+    addFloater(player.x, player.y-60, "Bonus: "+b.label+" (10s)!", "#9fd6ff", {decay:0.5, size:15});
+    updateHud();
+  }
+  function revertTempBuff(){
+    if(!player || !player.tempBuff) return;
+    const b = player.tempBuff;
+    player[b.stat] -= b.amount;
+    if(b.stat==="maxAmmo") player.ammo = Math.min(player.maxAmmo, player.ammo);
+    player.tempBuff = null;
+    addFloater(player.x, player.y-40, "Bonus faded", "#c9c3ac", {decay:0.8, size:12});
+    updateHud();
   }
 
   function makeBot(name, color){
@@ -1280,8 +1364,21 @@
   let qLocked = false; // true while the reveal is showing (after either a timeout or a wrong answer); blocks Enter/click from sneaking a late or repeat answer in
 
   // First-try answers pay out more the faster they land; a second-try answer
-  // pays a flat consolation scrap; anything beyond that pays nothing.
+  // pays a flat consolation scrap; anything beyond that pays nothing. Easy
+  // is the exception: a first-try correct answer grants a temporary buff
+  // instead (the "buff" sentinel, handled specially in submitQuestion),
+  // which pushes the scrap tiers down one slot — Easy's own maxAttempts cap
+  // means attempt never actually reaches 4 before the mercy give-up kicks in.
   function computeReward(attempt, elapsedMs){
+    if(difficulty==="easy"){
+      if(attempt===1) return "buff";
+      if(attempt===2){
+        if(elapsedMs<3000) return 4;
+        if(elapsedMs<6000) return 3;
+        return 2;
+      }
+      return 1;
+    }
     if(attempt===1){
       if(elapsedMs<3000) return 4;
       if(elapsedMs<6000) return 3;
@@ -1289,6 +1386,49 @@
     }
     if(attempt===2) return 1;
     return 0;
+  }
+
+  // Shared by a correct answer and Easy's out-of-tries mercy pass (reward 0
+  // there) — applies the scrap reward (already difficulty-scaled by the
+  // caller), then actually completes whatever the question was gating.
+  function completePendingPurpose(scrapReward){
+    const purpose = pendingPurpose;
+    if(scrapReward>0){
+      player.scraps += scrapReward;
+      addFloater(player.x, player.y-56, "+"+scrapReward+" scrap"+(scrapReward>1?"s":""), "#f5b942");
+    }
+    if(purpose==="reload"){
+      player.ammo = player.maxAmmo;
+      addFloater(player.x, player.y-28, "Reloaded!", "#f5b942");
+      updateHud();
+      closeQuestion();
+    } else if(purpose && purpose.type==="shop"){
+      const item = purpose.item;
+      const cost = itemCost(item, playerPurchaseCounts);
+      player.scraps -= cost;
+      playerPurchaseCounts[item.id]++;
+      item.apply(player);
+      updateHud();
+      closeQuestion();
+      if(!placementMode){ renderShop(); }
+    } else {
+      updateHud();
+    }
+  }
+
+  // Called after a miss (wrong or timeout) once its reveal pause elapses.
+  // On Easy, once attempts run out the game stops asking and just grants
+  // whatever the question was for — reload or purchase — with no reward,
+  // so a rough patch on the math never hard-blocks you from playing.
+  function proceedAfterMiss(){
+    questionAttempt++;
+    if(questionAttempt > diffCfg().maxAttempts){
+      addFloater(player.x, player.y-56, "Out of tries — granted anyway", "#c9c3ac");
+      completePendingPurpose(0);
+      return;
+    }
+    currentQuestion = genQuestion();
+    showQuestion();
   }
 
   // Resets the card to show currentQuestion and (re)arms the auto-fail timer.
@@ -1323,7 +1463,11 @@
     currentQuestion = genQuestion();
     qPurposeLabel.textContent = purpose==="reload" ? "Reload Console" : "Purchase Console";
     qOverlay.classList.add("open");
-    gamePaused = true;
+    // Hard mode doesn't freeze the world for a question — the bot, blocks,
+    // and everything else keep running live while you solve it. The modal
+    // still fully covers the field either way, so this never lets you move
+    // or shoot through it; it just decides whether the world waits for you.
+    if(diffCfg().questionFreeze) gamePaused = true;
     showQuestion(); // after the overlay is visible, so the synchronous focus() above actually lands
   }
 
@@ -1356,11 +1500,7 @@
     qSubmit.style.display = "none";
     qTimeoutReveal.textContent = "Answer: "+currentQuestion.answer;
     qTimeoutReveal.classList.add("show");
-    setTimeout(()=>{
-      questionAttempt++;
-      currentQuestion = genQuestion();
-      showQuestion();
-    },WRONG_ANSWER_PAUSE);
+    setTimeout(proceedAfterMiss, WRONG_ANSWER_PAUSE);
   }
 
   function submitQuestion(){
@@ -1375,32 +1515,19 @@
 
     if(correct){
       const reward = computeReward(questionAttempt, elapsed);
-      qFeedback.textContent = reward>0 ? ("Correct! +"+reward+" scrap"+(reward>1?"s":"")) : "Correct!";
-      qFeedback.className = "correct";
-      const purpose = pendingPurpose;
-      setTimeout(()=>{
-        if(reward>0){
-          player.scraps += reward;
-          addFloater(player.x, player.y-56, "+"+reward+" scrap"+(reward>1?"s":""), "#f5b942");
-        }
-        if(purpose==="reload"){
-          player.ammo = player.maxAmmo;
-          addFloater(player.x, player.y-28, "Reloaded!", "#f5b942");
-          updateHud();
-          closeQuestion();
-        } else if(purpose && purpose.type==="shop"){
-          const item = purpose.item;
-          const cost = itemCost(item, playerPurchaseCounts);
-          player.scraps -= cost;
-          playerPurchaseCounts[item.id]++;
-          item.apply(player);
-          updateHud();
-          closeQuestion();
-          if(!placementMode){ renderShop(); }
-        } else {
-          updateHud();
-        }
-      },450);
+      if(reward==="buff"){
+        qFeedback.textContent = "Correct! Bonus upgrade incoming!";
+        qFeedback.className = "correct";
+        setTimeout(()=>{
+          grantRandomTempBuff();
+          completePendingPurpose(0);
+        },450);
+      } else {
+        const scrapReward = reward>0 ? scaledScrap(reward) : 0;
+        qFeedback.textContent = scrapReward>0 ? ("Correct! +"+scrapReward+" scrap"+(scrapReward>1?"s":"")) : "Correct!";
+        qFeedback.className = "correct";
+        setTimeout(()=>completePendingPurpose(scrapReward), 450);
+      }
     } else {
       qLocked = true;
       qFeedback.textContent = "Not quite!";
@@ -1411,11 +1538,7 @@
       qSubmit.style.display = "none";
       qTimeoutReveal.textContent = "Answer: "+currentQuestion.answer;
       qTimeoutReveal.classList.add("show");
-      setTimeout(()=>{
-        questionAttempt++;
-        currentQuestion = genQuestion();
-        showQuestion();
-      },WRONG_ANSWER_PAUSE);
+      setTimeout(proceedAfterMiss, WRONG_ANSWER_PAUSE);
     }
   }
   document.getElementById("qSubmit").addEventListener("click",submitQuestion);
@@ -1532,7 +1655,7 @@
     // it comes home and fights back regardless of what it was doing.
     const wasDefending = bot.defendingBase;
     const dPlayerToBotBase = (player && !player.dead && botBase) ? Math.hypot(player.x-botBase.x, player.y-botBase.y) : Infinity;
-    const BASE_DEFEND_RADIUS = 260;
+    const BASE_DEFEND_RADIUS = 260 * diffCfg().botEngageRadiusMult;
     bot.defendingBase = wasDefending ? dPlayerToBotBase < BASE_DEFEND_RADIUS*1.3 : dPlayerToBotBase < BASE_DEFEND_RADIUS;
     if(bot.defendingBase && !wasDefending){
       bot.readyToFireAt = now + 0.3 + Math.random()*0.3;
@@ -1556,7 +1679,7 @@
       // cross the whole field (and dodge blocks along the way) before it can even
       // start firing — a short timer would keep expiring before it ever arrived.
       bot.assaultEndAt = now + 22 + Math.random()*10;
-      bot.nextAssaultAt = bot.assaultEndAt + 8 + Math.random()*10;
+      bot.nextAssaultAt = bot.assaultEndAt + (8 + Math.random()*10) * diffCfg().botAssaultGapMult;
       addFloater(bot.x, bot.y-40, "Pushing base!", "#ffb37a");
     }
 
@@ -1629,7 +1752,7 @@
           bot.reloadTimer = getBotReloadDelay();
         } else if(now>=bot.readyToFireAt && now-bot.lastShotTime > bot.nextFireCooldown){
           bot.lastShotTime = now;
-          bot.nextFireCooldown = BOT_FIRE_COOLDOWN_MIN + Math.random()*(BOT_FIRE_COOLDOWN_MAX-BOT_FIRE_COOLDOWN_MIN);
+          bot.nextFireCooldown = (BOT_FIRE_COOLDOWN_MIN + Math.random()*(BOT_FIRE_COOLDOWN_MAX-BOT_FIRE_COOLDOWN_MIN)) * diffCfg().botFireCooldownMult;
           bot.ammo--;
           const spread = (Math.random()-0.5)*getBotAimSpread();
           const ang = bot.angle + spread;
@@ -1653,8 +1776,9 @@
     tank.respawnAt = performance.now()/1000 + RESPAWN_DELAY;
     addFloater(tank.x, tank.y-30, isPlayerTank ? "Destroyed!" : "Bot destroyed!", "#ff8a75");
     if(!isPlayerTank && killerOwner==="player"){
-      player.scraps += 10;
-      addFloater(player.x, player.y-42, "+10 (kill bonus)", "#f5b942");
+      const bonus = scaledScrap(10);
+      player.scraps += bonus;
+      addFloater(player.x, player.y-42, "+"+bonus+" (kill bonus)", "#f5b942");
     }
     updateHud();
   }
@@ -1715,8 +1839,9 @@
             if(bl.owner==="player") telemetry.shotsHit++;
             if(b.hp<=0){
               const t = BLOCK_TIERS[b.tier];
-              const gain = randInt(t.scrap[0], t.scrap[1]);
+              const rawGain = randInt(t.scrap[0], t.scrap[1]);
               const earner = (bl.owner==="bot" && bot) ? bot : player;
+              const gain = (earner===player) ? scaledScrap(rawGain) : rawGain;
               earner.scraps += gain;
               addFloater(b.x,b.y,"+"+gain, bl.owner==="bot" ? "#9fd6ff" : "#f5b942");
               blocks.splice(j,1);
@@ -2043,6 +2168,7 @@
       updateBullets(dt);
       updateBlockSpawns(dt);
       checkRespawns();
+      if(player && player.tempBuff && performance.now()/1000 >= player.tempBuff.expiresAt) revertTempBuff();
 
       if(player && !player.dead){
         telemetry.timeTotal += dt;
@@ -2095,6 +2221,15 @@
     });
   });
 
+  const difficultyWrap = document.getElementById("difficultyToggle");
+  [...difficultyWrap.children].forEach(btn=>{
+    btn.addEventListener("click",()=>{
+      difficulty = btn.dataset.difficulty;
+      [...difficultyWrap.children].forEach(el=>el.classList.remove("selected"));
+      btn.classList.add("selected");
+    });
+  });
+
   document.getElementById("playAgainBtn").addEventListener("click",()=>{
     location.reload();
   });
@@ -2107,6 +2242,8 @@
     const colorName = TEAM_COLORS.find(c=>c.hex===chosenColor).name;
     const name = nameField.value.trim() || colorName;
     await loadLearnedProfile();
+    mathLevel = diffCfg().mathStartLevel;
+    fastStreak = 0;
     player = makePlayer(name, chosenColor);
     const playerColorIdx = TEAM_COLORS.findIndex(c=>c.hex===chosenColor);
     const botColor = TEAM_COLORS[(playerColorIdx+2)%4]; // contrasting color, opposite corner
