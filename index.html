@@ -506,6 +506,7 @@
         <h3>Difficulty</h3>
         <ul>
           <li><b>Easy</b>, <b>Medium</b>, or <b>Hard</b> below tunes the math questions, the bot's aggressiveness, and scrap payouts (Easy pays more, Hard a bit less).</li>
+          <li>Easy is addition/subtraction only. Medium adds simple multiplication/division (factors up to 5). Hard uses the full range of all four, growing as you answer well.</li>
           <li>On Hard, the game keeps running while you answer a question instead of pausing — everything else keeps moving.</li>
         </ul>
         <h3>The Math Twist</h3>
@@ -647,6 +648,8 @@
       maxAttempts: 3,        // give up and grant the reload/purchase for free after this many misses
       questionFreeze: true,  // game pauses while a question is open
       mathStartLevel: 0,
+      mathOps: ["add","sub"],  // no multiplication/division at all
+      mulDivCap: null,
       scrapMult: 1.25,       // +25% on every scrap award, rounded up
       botFireCooldownMult: 1.2,   // bot fires less often
       botAimSpreadMult: 1.25,     // bot aims less accurately
@@ -657,6 +660,8 @@
       maxAttempts: Infinity, // must eventually solve — no free pass
       questionFreeze: true,
       mathStartLevel: 0,
+      mathOps: ["add","sub","mul","div"],
+      mulDivCap: 5,           // keeps multiplication/division to simple 2-5 factors regardless of math level
       scrapMult: 1,
       botFireCooldownMult: 1,
       botAimSpreadMult: 1,
@@ -667,6 +672,8 @@
       maxAttempts: Infinity,
       questionFreeze: false, // game keeps running live while a question is open
       mathStartLevel: 1,     // starts a notch higher; still adapts up/down from there
+      mathOps: ["add","sub","mul","div"],
+      mulDivCap: null,        // no cap — uses the full adaptive range
       scrapMult: 0.75,       // -25% on every scrap award, rounded up
       botFireCooldownMult: 0.82,
       botAimSpreadMult: 0.8,
@@ -724,7 +731,6 @@
   // only ever changes the numbers involved \u2014 the timer and reward tiers
   // stay exactly the same at every level.
   // ============================================================
-  const OPS = ["add","sub","mul","div"];
   const MATH_LEVELS = [
     {addSubMax:20, mulDivMax:9},
     {addSubMax:26, mulDivMax:10},
@@ -761,7 +767,10 @@
 
   function genQuestion(){
     const level = MATH_LEVELS[mathLevel];
-    const op = OPS[Math.floor(Math.random()*OPS.length)];
+    const cfg = diffCfg();
+    const opsPool = cfg.mathOps;
+    const mulDivMax = cfg.mulDivCap ? Math.min(level.mulDivMax, cfg.mulDivCap) : level.mulDivMax;
+    const op = opsPool[Math.floor(Math.random()*opsPool.length)];
     let a,b,answer,text;
     if(op==="add"){
       a = randInt(1,level.addSubMax); b = randInt(1,level.addSubMax);
@@ -774,7 +783,7 @@
       if(Math.random()<0.3){ answer=b; text = a+" - ? = "+diff; }
       else { answer=diff; text = a+" - "+b+" = ?"; }
     } else if(op==="mul"){
-      a = randInt(2,level.mulDivMax); b = randInt(2,level.mulDivMax);
+      a = randInt(2,mulDivMax); b = randInt(2,mulDivMax);
       const product = a*b;
       // Solving for a missing factor takes an extra inverse-operation step
       // over just multiplying, so save it for once the numbers themselves
@@ -782,7 +791,7 @@
       if(mathLevel>=2 && Math.random()<0.3){ answer=b; text = a+" \u00D7 ? = "+product; }
       else { answer=product; text = a+" \u00D7 "+b+" = ?"; }
     } else {
-      b = randInt(2,level.mulDivMax); const q = randInt(2,level.mulDivMax); a = b*q;
+      b = randInt(2,mulDivMax); const q = randInt(2,mulDivMax); a = b*q;
       if(mathLevel>=2 && Math.random()<0.3){ answer=b; text = a+" \u00F7 ? = "+q; }
       else { answer=q; text = a+" \u00F7 "+b+" = ?"; }
     }
