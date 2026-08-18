@@ -253,7 +253,7 @@
   }
   #qTimerTrack{height:4px;background:#0c1109;border-radius:3px;overflow:hidden;margin-bottom:16px;}
   #qTimerFill{height:100%;width:100%;background:var(--green-ok);}
-  #qTimerFill.running{animation:shrink 10s linear forwards;}
+  #qTimerFill.running{animation-name:shrink;animation-duration:10s;animation-timing-function:linear;animation-fill-mode:forwards;}
   @keyframes shrink{
     0%{width:100%;background:var(--green-ok);}
     60%{background:var(--amber);}
@@ -647,6 +647,7 @@
     easy: {
       maxAttempts: 3,        // give up and grant the reload/purchase for free after this many misses
       questionFreeze: true,  // game pauses while a question is open
+      timerBase: 15000,      // ms, at this difficulty's own starting math level
       mathStartLevel: 0,
       mathOps: ["add","sub"],  // no multiplication/division at all
       mulDivCap: null,
@@ -659,6 +660,7 @@
     medium: {
       maxAttempts: Infinity, // must eventually solve — no free pass
       questionFreeze: true,
+      timerBase: 10000,
       mathStartLevel: 0,
       mathOps: ["add","sub","mul","div"],
       mulDivCap: 5,           // keeps multiplication/division to simple 2-5 factors regardless of math level
@@ -671,6 +673,7 @@
     hard: {
       maxAttempts: Infinity,
       questionFreeze: false, // game keeps running live while a question is open
+      timerBase: 10000,      // unchanged from before difficulty existed
       mathStartLevel: 1,     // starts a notch higher; still adapts up/down from there
       mathOps: ["add","sub","mul","div"],
       mulDivCap: null,        // no cap — uses the full adaptive range
@@ -763,6 +766,20 @@
     } else {
       fastStreak = 0; // correct, but not fast/first-try \u2014 streak breaks, level holds
     }
+  }
+
+  // The countdown timer adapts the same way the numbers do: each math level
+  // above/below the difficulty's own starting level shifts it a bit shorter/
+  // longer, off that difficulty's own base (Easy starts generous at 15s,
+  // Medium/Hard at 10s). Floored and ceilinged so it never becomes unfairly
+  // short or pointlessly long at the extremes.
+  const TIMER_STEP_MS = 1200;
+  const TIMER_MIN_MS = 6000;
+  const TIMER_MAX_MS = 18000;
+  function getQuestionTimeLimit(){
+    const cfg = diffCfg();
+    const delta = mathLevel - cfg.mathStartLevel;
+    return clamp(cfg.timerBase - delta*TIMER_STEP_MS, TIMER_MIN_MS, TIMER_MAX_MS);
   }
 
   function genQuestion(){
@@ -1163,9 +1180,10 @@
     if(document.getElementById("questionOverlay").classList.contains("open") && currentQuestion && !qLocked){
       qTimerFill.classList.remove("running");
       void qTimerFill.offsetWidth;
+      qTimerFill.style.animationDuration = (currentTimeLimit/1000)+"s";
       qTimerFill.classList.add("running");
       if(qTimeoutId) clearTimeout(qTimeoutId);
-      qTimeoutId = setTimeout(handleQuestionTimeout, QUESTION_TIME_LIMIT);
+      qTimeoutId = setTimeout(handleQuestionTimeout, currentTimeLimit);
     }
   }
   window.addEventListener("blur", pauseForAway);
@@ -1372,7 +1390,7 @@
   const qFeedback = document.getElementById("qFeedback");
   const qPurposeLabel = document.getElementById("qPurposeLabel");
   const qTimerFill = document.getElementById("qTimerFill");
-  const QUESTION_TIME_LIMIT = 10000; // ms — must match #qTimerFill's "shrink" animation duration
+  let currentTimeLimit = 10000; // ms — recomputed per question by getQuestionTimeLimit(); also drives #qTimerFill's animation-duration
   const WRONG_ANSWER_PAUSE = 2000; // ms to let feedback sink in before showing the next question
   let qTimeoutId = null;
   let questionAttempt = 1; // 1 = first question shown this reload/purchase, 2 = after one miss, etc.
@@ -1450,6 +1468,7 @@
   // Shared by the initial open, the wrong-answer reissue, and the timeout reissue.
   function showQuestion(){
     qLocked = false;
+    currentTimeLimit = getQuestionTimeLimit();
     qText.textContent = currentQuestion.text;
     qInput.value = "";
     qInput.style.display = "";
@@ -1459,6 +1478,7 @@
     qFeedback.className = "";
     qTimerFill.classList.remove("running");
     void qTimerFill.offsetWidth;
+    qTimerFill.style.animationDuration = (currentTimeLimit/1000)+"s";
     qTimerFill.classList.add("running");
     // Focus synchronously, in the same call stack as whatever user gesture
     // triggered this (a keypress, a click, a tap) — many mobile/touch
@@ -1469,7 +1489,7 @@
     qInput.focus();
     setTimeout(()=>qInput.focus(),50);
     if(qTimeoutId) clearTimeout(qTimeoutId);
-    qTimeoutId = setTimeout(handleQuestionTimeout, QUESTION_TIME_LIMIT);
+    qTimeoutId = setTimeout(handleQuestionTimeout, currentTimeLimit);
   }
 
   function openQuestion(purpose){
@@ -1504,9 +1524,9 @@
     qTimeoutId = null;
     if(!currentQuestion) return;
     qLocked = true;
-    playerElapsedHistory.push(QUESTION_TIME_LIMIT);
+    playerElapsedHistory.push(currentTimeLimit);
     if(playerElapsedHistory.length>8) playerElapsedHistory.shift();
-    recordQuestionOutcome(false, questionAttempt, QUESTION_TIME_LIMIT);
+    recordQuestionOutcome(false, questionAttempt, currentTimeLimit);
     qFeedback.textContent = "Time's up!";
     qFeedback.className = "wrong";
     qCard.classList.remove("shake"); void qCard.offsetWidth; qCard.classList.add("shake");
