@@ -674,7 +674,7 @@
       maxAttempts: Infinity,
       questionFreeze: false, // game keeps running live while a question is open
       timerBase: 10000,      // unchanged from before difficulty existed
-      mathStartLevel: 1,     // starts a notch higher; still adapts up/down from there
+      mathStartLevel: 2,     // lands on the same {26,10} tier Hard always started at (index shifted by the new smaller tier 0)
       mathOps: ["add","sub","mul","div"],
       mulDivCap: null,        // no cap — uses the full adaptive range
       scrapMult: 0.75,       // -25% on every scrap award, rounded up
@@ -734,7 +734,11 @@
   // only ever changes the numbers involved \u2014 the timer and reward tiers
   // stay exactly the same at every level.
   // ============================================================
+  // Index 0 is a new, smaller entry so Easy/Medium (which start there) get
+  // gentler opening numbers; Hard's own starting index is bumped below to
+  // land on the same {20,9}...{56,13} tiers it always has, unchanged.
   const MATH_LEVELS = [
+    {addSubMax:14, mulDivMax:8},
     {addSubMax:20, mulDivMax:9},
     {addSubMax:26, mulDivMax:10},
     {addSubMax:34, mulDivMax:11},
@@ -805,11 +809,11 @@
       // Solving for a missing factor takes an extra inverse-operation step
       // over just multiplying, so save it for once the numbers themselves
       // aren't the only thing that's gotten harder.
-      if(mathLevel>=2 && Math.random()<0.3){ answer=b; text = a+" \u00D7 ? = "+product; }
+      if(mathLevel>=3 && Math.random()<0.3){ answer=b; text = a+" \u00D7 ? = "+product; }
       else { answer=product; text = a+" \u00D7 "+b+" = ?"; }
     } else {
       b = randInt(2,mulDivMax); const q = randInt(2,mulDivMax); a = b*q;
-      if(mathLevel>=2 && Math.random()<0.3){ answer=b; text = a+" \u00F7 ? = "+q; }
+      if(mathLevel>=3 && Math.random()<0.3){ answer=b; text = a+" \u00F7 ? = "+q; }
       else { answer=q; text = a+" \u00F7 "+b+" = ?"; }
     }
     return {answer, text, start:performance.now()};
