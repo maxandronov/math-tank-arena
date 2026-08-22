@@ -1063,6 +1063,7 @@
         r: 30+Math.random()*50
       });
     }
+    renderFieldCache();
   }
 
   function pickTier(){
@@ -1947,22 +1948,34 @@
   // ============================================================
   const ctx = canvas.getContext("2d");
 
-  function drawField(){
-    ctx.fillStyle = "#6b9b4f";
-    ctx.fillRect(0,0,WIDTH,HEIGHT);
-    ctx.fillStyle = "rgba(95,143,70,0.5)";
+  // The checkerboard + terrain patches never change once a match starts, but
+  // drawField() used to repaint all ~190 of those shapes from scratch every
+  // single frame at 60fps. Render them once onto an offscreen canvas instead
+  // (whenever initTerrain() sets up a new match) and just blit that bitmap
+  // each frame — one drawImage() instead of ~190 fillRect/ellipse calls.
+  const fieldCache = document.createElement("canvas");
+  fieldCache.width = WIDTH; fieldCache.height = HEIGHT;
+  const fieldCacheCtx = fieldCache.getContext("2d");
+  function renderFieldCache(){
+    fieldCacheCtx.fillStyle = "#6b9b4f";
+    fieldCacheCtx.fillRect(0,0,WIDTH,HEIGHT);
+    fieldCacheCtx.fillStyle = "rgba(95,143,70,0.5)";
     const cell=40;
     for(let y=0;y<HEIGHT;y+=cell){
       for(let x=0;x<WIDTH;x+=cell){
-        if(((x/cell)+(y/cell))%2===0) ctx.fillRect(x,y,cell,cell);
+        if(((x/cell)+(y/cell))%2===0) fieldCacheCtx.fillRect(x,y,cell,cell);
       }
     }
-    ctx.fillStyle = "rgba(166,124,82,0.35)";
+    fieldCacheCtx.fillStyle = "rgba(166,124,82,0.35)";
     terrainPatches.forEach(p=>{
-      ctx.beginPath();
-      ctx.ellipse(p.x,p.y,p.r,p.r*0.6,0,0,Math.PI*2);
-      ctx.fill();
+      fieldCacheCtx.beginPath();
+      fieldCacheCtx.ellipse(p.x,p.y,p.r,p.r*0.6,0,0,Math.PI*2);
+      fieldCacheCtx.fill();
     });
+  }
+
+  function drawField(){
+    ctx.drawImage(fieldCache, 0, 0);
   }
 
   function drawCorners(){
@@ -2164,18 +2177,43 @@
   // ============================================================
   // HUD SYNC
   // ============================================================
+  // updateHud() runs every single frame regardless of gamePaused, so two
+  // things made it surprisingly expensive at 60fps: re-querying the DOM by
+  // id every call instead of caching the elements once, and unconditionally
+  // tearing down and rebuilding the ammo pips (createElement + appendChild
+  // up to 12 times) even on the vast majority of frames where nothing about
+  // the HUD actually changed. Cache the elements once and skip each piece
+  // of work unless its underlying value is actually different from last time.
+  const hpFillEl = document.getElementById("hpFill");
+  const hpNumEl = document.getElementById("hpNum");
+  const baseFillEl = document.getElementById("baseFill");
+  const baseNumEl = document.getElementById("baseNum");
+  const scrapsCountEl = document.getElementById("scrapsCount");
+  const ammoRowEl = document.getElementById("ammoRow");
+  let hudLastHp=-1, hudLastMaxHp=-1, hudLastBaseHp=-1, hudLastScraps=-1, hudLastAmmo=-1, hudLastMaxAmmo=-1;
   function updateHud(){
-    document.getElementById("hpFill").style.width = (player.hp/player.maxHp*100)+"%";
-    document.getElementById("hpNum").textContent = Math.round(player.hp)+"/"+player.maxHp;
-    document.getElementById("baseFill").style.width = (base.hp/base.maxHp*100)+"%";
-    document.getElementById("baseNum").textContent = base.hp+"/"+base.maxHp;
-    document.getElementById("scrapsCount").textContent = player.scraps;
-    const row = document.getElementById("ammoRow");
-    row.innerHTML = "";
-    for(let i=0;i<player.maxAmmo;i++){
-      const pip = document.createElement("div");
-      pip.className = "ammo-pip"+(i<player.ammo?" filled":"");
-      row.appendChild(pip);
+    if(player.hp!==hudLastHp || player.maxHp!==hudLastMaxHp){
+      hpFillEl.style.width = (player.hp/player.maxHp*100)+"%";
+      hpNumEl.textContent = Math.round(player.hp)+"/"+player.maxHp;
+      hudLastHp = player.hp; hudLastMaxHp = player.maxHp;
+    }
+    if(base.hp!==hudLastBaseHp){
+      baseFillEl.style.width = (base.hp/base.maxHp*100)+"%";
+      baseNumEl.textContent = base.hp+"/"+base.maxHp;
+      hudLastBaseHp = base.hp;
+    }
+    if(player.scraps!==hudLastScraps){
+      scrapsCountEl.textContent = player.scraps;
+      hudLastScraps = player.scraps;
+    }
+    if(player.ammo!==hudLastAmmo || player.maxAmmo!==hudLastMaxAmmo){
+      ammoRowEl.innerHTML = "";
+      for(let i=0;i<player.maxAmmo;i++){
+        const pip = document.createElement("div");
+        pip.className = "ammo-pip"+(i<player.ammo?" filled":"");
+        ammoRowEl.appendChild(pip);
+      }
+      hudLastAmmo = player.ammo; hudLastMaxAmmo = player.maxAmmo;
     }
   }
 
